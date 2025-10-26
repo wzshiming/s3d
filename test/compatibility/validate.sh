@@ -25,30 +25,42 @@ fi
 # Test 3: Test parse_results with sample data
 echo "✓ Testing parse_results.sh with sample data..."
 TMP_LOG=$(mktemp)
+
+# Create sample data with known counts
+EXPECTED_TOTAL=3
+EXPECTED_PASS=2
+EXPECTED_FAIL=1
+
 cat > "$TMP_LOG" << 'EOF'
 {"name":"test-sdk","function":"TestFunction1","status":"PASS","duration":100}
 {"name":"test-sdk","function":"TestFunction2","status":"PASS","duration":150}
 {"name":"test-sdk","function":"TestFunction3","status":"FAIL","duration":200,"error":"Test error"}
 EOF
 
-OUTPUT=$(./parse_results.sh "$TMP_LOG" 2>&1)
+# Run parse_results and check exit code
+if ! OUTPUT=$(./parse_results.sh "$TMP_LOG" 2>&1); then
+    echo "  - parse_results.sh failed to execute"
+    rm "$TMP_LOG"
+    exit 1
+fi
 rm "$TMP_LOG"
 
-if echo "$OUTPUT" | grep -q "Total tests: 3"; then
+# Validate output contains expected counts
+if echo "$OUTPUT" | grep -q "Total tests: $EXPECTED_TOTAL"; then
     echo "  - Total count: OK"
 else
     echo "  - Total count: FAILED"
     exit 1
 fi
 
-if echo "$OUTPUT" | grep -q "Passed: 2"; then
+if echo "$OUTPUT" | grep -q "Passed: $EXPECTED_PASS"; then
     echo "  - Pass count: OK"
 else
     echo "  - Pass count: FAILED"
     exit 1
 fi
 
-if echo "$OUTPUT" | grep -q "Failed: 1"; then
+if echo "$OUTPUT" | grep -q "Failed: $EXPECTED_FAIL"; then
     echo "  - Fail count: OK"
 else
     echo "  - Fail count: FAILED"
