@@ -591,3 +591,267 @@ func TestUploadPartCopyWithSpecialCharacters(t *testing.T) {
 		t.Fatalf("Expected content %q, got %q", sourceContent, string(data))
 	}
 }
+
+func TestListMultipartUploadsPagination(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-list-multipart-pagination"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Create multiple uploads - more than we'll request per page
+	numUploads := 8
+	uploadIDs := make([]*string, numUploads)
+	for i := 0; i < numUploads; i++ {
+		key := fmt.Sprintf("upload-%03d.txt", i)
+		initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create multipart upload %d: %v", i, err)
+		}
+		uploadIDs[i] = initOutput.UploadId
+	}
+
+	// Clean up uploads at the end
+	defer func() {
+		for i, uploadID := range uploadIDs {
+			if uploadID != nil {
+				ts.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+					Bucket:   aws.String(bucketName),
+					Key:      aws.String(fmt.Sprintf("upload-%03d.txt", i)),
+					UploadId: uploadID,
+				})
+			}
+		}
+	}()
+
+	// Test pagination with MaxUploads
+	t.Run("PaginationWithMaxUploads", func(t *testing.T) {
+		maxUploads := int32(3)
+		var allUploads []string
+
+		// First page
+		output, err := ts.client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     aws.String(bucketName),
+			MaxUploads: aws.Int32(maxUploads),
+		})
+		if err != nil {
+			t.Fatalf("ListMultipartUploads first page failed: %v", err)
+		}
+
+		if len(output.Uploads) > int(maxUploads) {
+			t.Errorf("Expected at most %d uploads in first page, got %d", maxUploads, len(output.Uploads))
+		}
+
+		for _, upload := range output.Uploads {
+			allUploads = append(allUploads, *upload.Key)
+		}
+
+		// If there are more uploads, IsTruncated should be true
+		if numUploads > int(maxUploads) && (output.IsTruncated == nil || !*output.IsTruncated) {
+			t.Errorf("Expected IsTruncated=true when more uploads exist than MaxUploads")
+		}
+
+		// Continue fetching pages if truncated
+		keyMarker := output.NextKeyMarker
+		uploadIDMarker := output.NextUploadIdMarker
+		for output.IsTruncated != nil && *output.IsTruncated {
+			output, err = ts.client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+				Bucket:         aws.String(bucketName),
+				MaxUploads:     aws.Int32(maxUploads),
+				KeyMarker:      keyMarker,
+				UploadIdMarker: uploadIDMarker,
+			})
+			if err != nil {
+				t.Fatalf("ListMultipartUploads continuation failed: %v", err)
+			}
+
+			for _, upload := range output.Uploads {
+				allUploads = append(allUploads, *upload.Key)
+			}
+
+			keyMarker = output.NextKeyMarker
+			uploadIDMarker = output.NextUploadIdMarker
+		}
+
+		// Verify we got all uploads
+		if len(allUploads) != numUploads {
+			t.Errorf("Expected %d total uploads across all pages, got %d", numUploads, len(allUploads))
+		}
+
+		// Verify no duplicates
+		seen := make(map[string]bool)
+		for _, key := range allUploads {
+			if seen[key] {
+				t.Errorf("Duplicate upload key found: %s", key)
+			}
+			seen[key] = true
+		}
+	})
+
+	// Test small MaxUploads value
+	t.Run("MaxUploadsOne", func(t *testing.T) {
+		output, err := ts.client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     aws.String(bucketName),
+			MaxUploads: aws.Int32(1),
+		})
+		if err != nil {
+			t.Fatalf("ListMultipartUploads with MaxUploads=1 failed: %v", err)
+		}
+
+		if len(output.Uploads) != 1 {
+			t.Errorf("Expected exactly 1 upload with MaxUploads=1, got %d", len(output.Uploads))
+		}
+
+		if output.IsTruncated == nil || !*output.IsTruncated {
+			t.Errorf("Expected IsTruncated=true with MaxUploads=1 and %d total uploads", numUploads)
+		}
+
+		if output.NextKeyMarker == nil {
+			t.Errorf("Expected NextKeyMarker to be set when IsTruncated=true")
+		}
+	})
+}
+
+func TestListPartsPagination(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-list-parts-pagination"
+	objectKey := "test-multipart-object.txt"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Initiate multipart upload
+	initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create multipart upload: %v", err)
+	}
+	uploadID := initOutput.UploadId
+
+	defer ts.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(bucketName),
+		Key:      aws.String(objectKey),
+		UploadId: uploadID,
+	})
+
+	// Upload multiple parts - more than we'll request per page
+	numParts := 8
+	for i := 1; i <= numParts; i++ {
+		_, err := ts.client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(objectKey),
+			UploadId:   uploadID,
+			PartNumber: aws.Int32(int32(i)),
+			Body:       strings.NewReader(fmt.Sprintf("part %d data", i)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to upload part %d: %v", i, err)
+		}
+	}
+
+	// Test pagination with MaxParts
+	t.Run("PaginationWithMaxParts", func(t *testing.T) {
+		maxParts := int32(3)
+		var allParts []int32
+
+		// First page
+		output, err := ts.client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String(objectKey),
+			UploadId: uploadID,
+			MaxParts: aws.Int32(maxParts),
+		})
+		if err != nil {
+			t.Fatalf("ListParts first page failed: %v", err)
+		}
+
+		if len(output.Parts) > int(maxParts) {
+			t.Errorf("Expected at most %d parts in first page, got %d", maxParts, len(output.Parts))
+		}
+
+		for _, part := range output.Parts {
+			allParts = append(allParts, *part.PartNumber)
+		}
+
+		// If there are more parts, IsTruncated should be true
+		if numParts > int(maxParts) && (output.IsTruncated == nil || !*output.IsTruncated) {
+			t.Errorf("Expected IsTruncated=true when more parts exist than MaxParts")
+		}
+
+		// Continue fetching pages if truncated
+		partNumberMarker := output.NextPartNumberMarker
+		for output.IsTruncated != nil && *output.IsTruncated {
+			output, err = ts.client.ListParts(ctx, &s3.ListPartsInput{
+				Bucket:           aws.String(bucketName),
+				Key:              aws.String(objectKey),
+				UploadId:         uploadID,
+				MaxParts:         aws.Int32(maxParts),
+				PartNumberMarker: partNumberMarker,
+			})
+			if err != nil {
+				t.Fatalf("ListParts continuation failed: %v", err)
+			}
+
+			for _, part := range output.Parts {
+				allParts = append(allParts, *part.PartNumber)
+			}
+
+			partNumberMarker = output.NextPartNumberMarker
+		}
+
+		// Verify we got all parts
+		if len(allParts) != numParts {
+			t.Errorf("Expected %d total parts across all pages, got %d", numParts, len(allParts))
+		}
+
+		// Verify no duplicates and parts are in order
+		for i, partNum := range allParts {
+			expectedPartNum := int32(i + 1)
+			if partNum != expectedPartNum {
+				t.Errorf("Expected part number %d at position %d, got %d", expectedPartNum, i, partNum)
+			}
+		}
+	})
+
+	// Test small MaxParts value
+	t.Run("MaxPartsOne", func(t *testing.T) {
+		output, err := ts.client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String(objectKey),
+			UploadId: uploadID,
+			MaxParts: aws.Int32(1),
+		})
+		if err != nil {
+			t.Fatalf("ListParts with MaxParts=1 failed: %v", err)
+		}
+
+		if len(output.Parts) != 1 {
+			t.Errorf("Expected exactly 1 part with MaxParts=1, got %d", len(output.Parts))
+		}
+
+		if output.IsTruncated == nil || !*output.IsTruncated {
+			t.Errorf("Expected IsTruncated=true with MaxParts=1 and %d total parts", numParts)
+		}
+
+		if output.NextPartNumberMarker == nil {
+			t.Errorf("Expected NextPartNumberMarker to be set when IsTruncated=true")
+		}
+	})
+}
