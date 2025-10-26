@@ -18,11 +18,6 @@ linters:
     - unparam
     - misspell
 
-formatters:
-  enable:
-    - gofmt
-    - goimports
-
 linters-settings:
   errcheck:
     check-type-assertions: true
