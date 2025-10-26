@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
 	"hash/crc32"
@@ -38,10 +37,9 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 and CRC32 while writing
-	hash := md5.New()
+	// Calculate CRC32 while writing
 	crc := crc32.NewIEEE()
-	writer := io.MultiWriter(tmpFile, hash, crc)
+	writer := io.MultiWriter(tmpFile, crc)
 
 	if _, err := io.Copy(writer, data); err != nil {
 		tmpFile.Close()
@@ -55,7 +53,6 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 
 	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
 	crc32Sum := crc.Sum32()
 	crc32Bytes := []byte{
 		byte(crc32Sum >> 24),
@@ -64,6 +61,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		byte(crc32Sum),
 	}
 	crc32Base64 := base64.StdEncoding.EncodeToString(crc32Bytes)
+	etag := hex.EncodeToString(crc32Bytes)
 	
 	metadata := &Metadata{
 		ContentType: contentType,
@@ -306,10 +304,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Copy data and calculate MD5 and CRC32
-	hash := md5.New()
+	// Copy data and calculate CRC32
 	crc := crc32.NewIEEE()
-	writer := io.MultiWriter(tmpFile, hash, crc)
+	writer := io.MultiWriter(tmpFile, crc)
 
 	if _, err := io.Copy(writer, srcFile); err != nil {
 		tmpFile.Close()
@@ -323,7 +320,6 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	}
 
 	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
 	crc32Sum := crc.Sum32()
 	crc32Bytes := []byte{
 		byte(crc32Sum >> 24),
@@ -332,6 +328,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		byte(crc32Sum),
 	}
 	crc32Base64 := base64.StdEncoding.EncodeToString(crc32Bytes)
+	etag := hex.EncodeToString(crc32Bytes)
 	
 	dstMetadata := &Metadata{
 		ContentType: contentType,

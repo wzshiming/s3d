@@ -1,9 +1,10 @@
 package storage
 
 import (
-	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -75,9 +76,9 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while writing
-	hash := md5.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate CRC32 while writing
+	crc := crc32.NewIEEE()
+	writer := io.MultiWriter(tmpFile, crc)
 
 	_, err = io.Copy(writer, data)
 	if err != nil {
@@ -86,7 +87,14 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	tmpFile.Close()
 
-	etag := hex.EncodeToString(hash.Sum(nil))
+	crc32Sum := crc.Sum32()
+	crc32Bytes := []byte{
+		byte(crc32Sum >> 24),
+		byte(crc32Sum >> 16),
+		byte(crc32Sum >> 8),
+		byte(crc32Sum),
+	}
+	etag := hex.EncodeToString(crc32Bytes)
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -144,9 +152,9 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while copying
-	hash := md5.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate CRC32 while copying
+	crc := crc32.NewIEEE()
+	writer := io.MultiWriter(tmpFile, crc)
 
 	_, err = io.Copy(writer, srcFile)
 	if err != nil {
@@ -155,7 +163,14 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	tmpFile.Close()
 
-	etag := hex.EncodeToString(hash.Sum(nil))
+	crc32Sum := crc.Sum32()
+	crc32Bytes := []byte{
+		byte(crc32Sum >> 24),
+		byte(crc32Sum >> 16),
+		byte(crc32Sum >> 8),
+		byte(crc32Sum),
+	}
+	etag := hex.EncodeToString(crc32Bytes)
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -199,7 +214,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	defer os.Remove(tmpFile.Name())
 
-	hash := md5.New()
+	crc := crc32.NewIEEE()
 
 	// Concatenate parts in order
 	for _, part := range parts {
@@ -212,7 +227,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 			return "", err
 		}
 
-		if _, err := io.Copy(io.MultiWriter(tmpFile, hash), partFile); err != nil {
+		if _, err := io.Copy(io.MultiWriter(tmpFile, crc), partFile); err != nil {
 			partFile.Close()
 			tmpFile.Close()
 			return "", err
@@ -227,7 +242,15 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
+	crc32Sum := crc.Sum32()
+	crc32Bytes := []byte{
+		byte(crc32Sum >> 24),
+		byte(crc32Sum >> 16),
+		byte(crc32Sum >> 8),
+		byte(crc32Sum),
+	}
+	crc32Base64 := base64.StdEncoding.EncodeToString(crc32Bytes)
+	etag := hex.EncodeToString(crc32Bytes)
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata, err := s.loadMetadata(uploadMetaPath)
@@ -236,6 +259,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	metadata.ETag = etag
+	metadata.CRC32 = crc32Base64
 	if err := s.saveMetadata(metaPath, metadata); err != nil {
 		return "", err
 	}
