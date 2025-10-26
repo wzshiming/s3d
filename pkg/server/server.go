@@ -109,8 +109,11 @@ func (s *S3Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Object operations
 	switch r.Method {
 	case http.MethodPut:
-		// Check for copy operation (x-amz-copy-source header)
-		if r.Header.Get("x-amz-copy-source") != "" {
+		// Check for rename operation (x-amz-rename-source header)
+		if r.Header.Get("x-amz-rename-source") != "" {
+			s.handleRenameObject(w, r, bucket, key)
+		} else if r.Header.Get("x-amz-copy-source") != "" {
+			// Check for copy operation (x-amz-copy-source header)
 			s.handleCopyObject(w, r, bucket, key)
 		} else {
 			s.handlePutObject(w, r, bucket, key)

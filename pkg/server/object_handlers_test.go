@@ -298,6 +298,71 @@ func TestCopyObject(t *testing.T) {
 	}
 }
 
+func TestRenameObject(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-rename-bucket"
+	srcKey := "original.txt"
+	dstKey := "renamed.txt"
+	content := "Hello, this is original content!"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create source object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+		Body:   strings.NewReader(content),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Rename object
+	renameSource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+	_, err = ts.client.RenameObject(ctx, &s3.RenameObjectInput{
+		Bucket:       aws.String(bucketName),
+		Key:          aws.String(dstKey),
+		RenameSource: aws.String(renameSource),
+	})
+	if err != nil {
+		t.Fatalf("RenameObject failed: %v", err)
+	}
+
+	// Verify destination object exists
+	output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(dstKey),
+	})
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	defer output.Body.Close()
+
+	data, err := io.ReadAll(output.Body)
+	if err != nil {
+		t.Fatalf("Failed to read object body: %v", err)
+	}
+
+	if string(data) != content {
+		t.Fatalf("Expected content %q, got %q", content, string(data))
+	}
+
+	// Verify source object no longer exists
+	_, err = ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+	})
+	if err == nil {
+		t.Fatalf("Expected error when getting renamed object from original location")
+	}
+}
+
 func TestHeadObjectNotFound(t *testing.T) {
 	ctx := context.Background()
 	bucketName := "test-head-object-not-found"

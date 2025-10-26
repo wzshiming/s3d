@@ -140,6 +140,51 @@ func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstB
 	s.xmlResponse(w, result, http.StatusOK)
 }
 
+// handleRenameObject handles RenameObject operation
+func (s *S3Server) handleRenameObject(w http.ResponseWriter, r *http.Request, bucket, dstKey string) {
+	// Parse x-amz-rename-source header
+	renameSource := r.Header.Get("x-amz-rename-source")
+	if renameSource == "" {
+		s.errorResponse(w, r, "InvalidArgument", "Rename source header is required", http.StatusBadRequest)
+		return
+	}
+
+	// Remove leading slash if present
+	renameSource = strings.TrimPrefix(renameSource, "/")
+
+	// Parse source bucket and key
+	parts := strings.SplitN(renameSource, "/", 2)
+	if len(parts) != 2 {
+		s.errorResponse(w, r, "InvalidArgument", "Invalid rename source format", http.StatusBadRequest)
+		return
+	}
+
+	srcBucket := parts[0]
+	srcKey := parts[1]
+
+	// Verify both source and destination are in the same bucket
+	if srcBucket != bucket {
+		s.errorResponse(w, r, "InvalidArgument", "RenameObject requires source and destination to be in the same bucket", http.StatusBadRequest)
+		return
+	}
+
+	// Perform rename
+	err := s.storage.RenameObject(bucket, srcKey, dstKey)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else if err == storage.ErrObjectNotFound {
+			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// RenameObject returns 204 No Content on success
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleListObjects handles ListObjects operation (v1 and v2)
 func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	query := r.URL.Query()
