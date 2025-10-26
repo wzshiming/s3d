@@ -108,6 +108,10 @@ func (s *S3Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Object operations
 	switch r.Method {
+	case http.MethodPost:
+		// Check for rename operation (targetKey query parameter)
+		// Always call handleRenameObject for POST on objects
+		s.handleRenameObject(w, r, bucket, key)
 	case http.MethodPut:
 		// Check for copy operation (x-amz-copy-source header)
 		if r.Header.Get("x-amz-copy-source") != "" {

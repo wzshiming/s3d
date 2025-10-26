@@ -252,3 +252,33 @@ func (s *S3Server) handleListObjectsV2(w http.ResponseWriter, r *http.Request, b
 
 	s.xmlResponse(w, result, http.StatusOK)
 }
+
+// handleRenameObject handles RenameObject operation
+func (s *S3Server) handleRenameObject(w http.ResponseWriter, r *http.Request, bucket, sourceKey string) {
+// Get target key from query parameter
+targetKey := r.URL.Query().Get("targetKey")
+if targetKey == "" {
+s.errorResponse(w, r, "InvalidArgument", "targetKey query parameter is required", http.StatusBadRequest)
+return
+}
+
+// Perform rename
+etag, err := s.storage.RenameObject(bucket, sourceKey, targetKey)
+if err != nil {
+if err == storage.ErrBucketNotFound {
+s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+} else if err == storage.ErrObjectNotFound {
+s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
+} else {
+s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+result := s3types.RenameObjectResult{
+LastModified: time.Now().UTC(),
+ETag:         fmt.Sprintf("%q", etag),
+}
+
+s.xmlResponse(w, result, http.StatusOK)
+}

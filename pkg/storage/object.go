@@ -312,3 +312,78 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 
 	return etag, nil
 }
+
+// RenameObject renames an object within a bucket
+func (s *Storage) RenameObject(bucket, sourceKey, targetKey string) (string, error) {
+	// Verify bucket exists
+	if !s.BucketExists(bucket) {
+		return "", ErrBucketNotFound
+	}
+
+	// Get source object directory
+	srcObjectDir, err := s.safePath(bucket, sourceKey)
+	if err != nil {
+		return "", err
+	}
+
+	srcDataPath := filepath.Join(srcObjectDir, dataFile)
+	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
+
+	// Check if source exists
+	if _, err := os.Stat(srcDataPath); os.IsNotExist(err) {
+		return "", ErrObjectNotFound
+	}
+
+	// Get target object directory
+	targetObjectDir, err := s.safePath(bucket, targetKey)
+	if err != nil {
+		return "", err
+	}
+
+	// Create target object directory
+	if err := os.MkdirAll(targetObjectDir, 0755); err != nil {
+		return "", err
+	}
+
+	targetDataPath := filepath.Join(targetObjectDir, dataFile)
+	targetMetaPath := filepath.Join(targetObjectDir, metaFile)
+
+	// Move data file
+	if err := os.Rename(srcDataPath, targetDataPath); err != nil {
+		return "", err
+	}
+
+	// Move metadata file
+	if err := os.Rename(srcMetaPath, targetMetaPath); err != nil {
+		// Try to rollback data file move
+		os.Rename(targetDataPath, srcDataPath)
+		return "", err
+	}
+
+	// Remove old object directory if empty
+	os.Remove(srcObjectDir)
+
+	// Load metadata to get ETag
+	metadata, err := s.loadMetadata(targetMetaPath)
+	if err != nil {
+		return "", err
+	}
+
+	etag := metadata["ETag"]
+	if etag == "" {
+		// Calculate ETag if not in metadata
+		file, err := os.Open(targetDataPath)
+		if err != nil {
+			return "", err
+		}
+		defer file.Close()
+
+		hash := md5.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			return "", err
+		}
+		etag = hex.EncodeToString(hash.Sum(nil))
+	}
+
+	return etag, nil
+}

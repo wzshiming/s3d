@@ -147,6 +147,13 @@ type CopyObjectResult struct {
 	ETag         string    `xml:"ETag"`
 }
 
+// RenameObjectResult is the response for RenameObject operation
+type RenameObjectResult struct {
+	XMLName      xml.Name  `xml:"RenameObjectResult"`
+	LastModified time.Time `xml:"LastModified"`
+	ETag         string    `xml:"ETag"`
+}
+
 // CopyPartResult is the response for UploadPartCopy operation
 type CopyPartResult struct {
 	XMLName      xml.Name  `xml:"CopyPartResult"`
