@@ -578,3 +578,285 @@ func TestListObjectsV2(t *testing.T) {
 		})
 	}
 }
+
+func TestListObjectsV2Pagination(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-list-objects-v2-pagination"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Create more objects than we'll request per page
+	numObjects := 10
+	testObjects := make([]string, numObjects)
+	for i := 0; i < numObjects; i++ {
+		testObjects[i] = fmt.Sprintf("object-%03d.txt", i)
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(testObjects[i]),
+			Body:   strings.NewReader(fmt.Sprintf("content-%d", i)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to put object %s: %v", testObjects[i], err)
+		}
+	}
+	defer func() {
+		for _, key := range testObjects {
+			ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String(key),
+			})
+		}
+	}()
+
+	// Test pagination with MaxKeys
+	t.Run("PaginationWithMaxKeys", func(t *testing.T) {
+		maxKeys := int32(3)
+		var allObjects []string
+
+		// First page
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(maxKeys),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 first page failed: %v", err)
+		}
+
+		if len(output.Contents) > int(maxKeys) {
+			t.Errorf("Expected at most %d objects in first page, got %d", maxKeys, len(output.Contents))
+		}
+
+		for _, obj := range output.Contents {
+			allObjects = append(allObjects, *obj.Key)
+		}
+
+		// If there are more objects, IsTruncated should be true
+		if len(testObjects) > int(maxKeys) && (output.IsTruncated == nil || !*output.IsTruncated) {
+			t.Errorf("Expected IsTruncated=true when more objects exist than MaxKeys, got false")
+		}
+
+		// Continue fetching pages if truncated
+		continuationToken := output.NextContinuationToken
+		for output.IsTruncated != nil && *output.IsTruncated && continuationToken != nil {
+			output, err = ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:            aws.String(bucketName),
+				MaxKeys:           aws.Int32(maxKeys),
+				ContinuationToken: continuationToken,
+			})
+			if err != nil {
+				t.Fatalf("ListObjectsV2 continuation failed: %v", err)
+			}
+
+			for _, obj := range output.Contents {
+				allObjects = append(allObjects, *obj.Key)
+			}
+
+			continuationToken = output.NextContinuationToken
+		}
+
+		// Verify we got all objects
+		if len(allObjects) != numObjects {
+			t.Errorf("Expected %d total objects across all pages, got %d", numObjects, len(allObjects))
+		}
+
+		// Verify no duplicates
+		seen := make(map[string]bool)
+		for _, key := range allObjects {
+			if seen[key] {
+				t.Errorf("Duplicate object key found: %s", key)
+			}
+			seen[key] = true
+		}
+	})
+
+	// Test pagination with StartAfter
+	t.Run("PaginationWithStartAfter", func(t *testing.T) {
+		startAfter := "object-004.txt"
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     aws.String(bucketName),
+			StartAfter: aws.String(startAfter),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with StartAfter failed: %v", err)
+		}
+
+		// All returned objects should come after startAfter
+		for _, obj := range output.Contents {
+			if *obj.Key <= startAfter {
+				t.Errorf("Object %s should come after StartAfter %s", *obj.Key, startAfter)
+			}
+		}
+
+		// Should have 5 objects (005-009)
+		expectedCount := 5
+		if len(output.Contents) != expectedCount {
+			t.Errorf("Expected %d objects after %s, got %d", expectedCount, startAfter, len(output.Contents))
+		}
+	})
+
+	// Test small MaxKeys value
+	t.Run("MaxKeysOne", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(1),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with MaxKeys=1 failed: %v", err)
+		}
+
+		if len(output.Contents) != 1 {
+			t.Errorf("Expected exactly 1 object with MaxKeys=1, got %d", len(output.Contents))
+		}
+
+		if output.IsTruncated == nil || !*output.IsTruncated {
+			t.Errorf("Expected IsTruncated=true with MaxKeys=1 and %d total objects", numObjects)
+		}
+
+		if output.NextContinuationToken == nil {
+			t.Errorf("Expected NextContinuationToken to be set when IsTruncated=true")
+		}
+	})
+
+	// Test KeyCount field
+	t.Run("KeyCountField", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(3),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 failed: %v", err)
+		}
+
+		if *output.KeyCount != int32(len(output.Contents)) {
+			t.Errorf("KeyCount (%d) should equal number of Contents (%d)", *output.KeyCount, len(output.Contents))
+		}
+	})
+}
+
+func TestListObjectsV1Pagination(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-list-objects-v1-pagination"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Create more objects than we'll request per page
+	numObjects := 10
+	testObjects := make([]string, numObjects)
+	for i := 0; i < numObjects; i++ {
+		testObjects[i] = fmt.Sprintf("file-%03d.txt", i)
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(testObjects[i]),
+			Body:   strings.NewReader(fmt.Sprintf("content-%d", i)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to put object %s: %v", testObjects[i], err)
+		}
+	}
+	defer func() {
+		for _, key := range testObjects {
+			ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String(key),
+			})
+		}
+	}()
+
+	// Test pagination with MaxKeys and Marker
+	t.Run("PaginationWithMarker", func(t *testing.T) {
+		maxKeys := int32(4)
+		var allObjects []string
+
+		// First page
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(maxKeys),
+		})
+		if err != nil {
+			t.Fatalf("ListObjects first page failed: %v", err)
+		}
+
+		if len(output.Contents) > int(maxKeys) {
+			t.Errorf("Expected at most %d objects in first page, got %d", maxKeys, len(output.Contents))
+		}
+
+		for _, obj := range output.Contents {
+			allObjects = append(allObjects, *obj.Key)
+		}
+
+		// If there are more objects, IsTruncated should be true
+		if len(testObjects) > int(maxKeys) && (output.IsTruncated == nil || !*output.IsTruncated) {
+			t.Errorf("Expected IsTruncated=true when more objects exist than MaxKeys, got false")
+		}
+
+		// Continue fetching pages if truncated
+		marker := output.NextMarker
+		for output.IsTruncated != nil && *output.IsTruncated {
+			output, err = ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+				Bucket:  aws.String(bucketName),
+				MaxKeys: aws.Int32(maxKeys),
+				Marker:  marker,
+			})
+			if err != nil {
+				t.Fatalf("ListObjects continuation failed: %v", err)
+			}
+
+			for _, obj := range output.Contents {
+				allObjects = append(allObjects, *obj.Key)
+			}
+
+			marker = output.NextMarker
+		}
+
+		// Verify we got all objects
+		if len(allObjects) != numObjects {
+			t.Errorf("Expected %d total objects across all pages, got %d", numObjects, len(allObjects))
+		}
+
+		// Verify no duplicates
+		seen := make(map[string]bool)
+		for _, key := range allObjects {
+			if seen[key] {
+				t.Errorf("Duplicate object key found: %s", key)
+			}
+			seen[key] = true
+		}
+	})
+
+	// Test small MaxKeys value
+	t.Run("MaxKeysOne", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(1),
+		})
+		if err != nil {
+			t.Fatalf("ListObjects with MaxKeys=1 failed: %v", err)
+		}
+
+		if len(output.Contents) != 1 {
+			t.Errorf("Expected exactly 1 object with MaxKeys=1, got %d", len(output.Contents))
+		}
+
+		if output.IsTruncated == nil || !*output.IsTruncated {
+			t.Errorf("Expected IsTruncated=true with MaxKeys=1 and %d total objects", numObjects)
+		}
+
+		if output.NextMarker == nil || *output.NextMarker == "" {
+			t.Errorf("Expected NextMarker to be set when IsTruncated=true")
+		}
+	})
+}

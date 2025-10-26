@@ -175,7 +175,7 @@ func TestListMultipartUploads(t *testing.T) {
 	}
 
 	// List all uploads
-	uploads, err := store.ListMultipartUploads(bucketName, "", 0)
+	uploads, err := store.ListMultipartUploads(bucketName, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListMultipartUploads failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestListMultipartUploads(t *testing.T) {
 	}
 
 	// List uploads with prefix
-	uploads, err = store.ListMultipartUploads(bucketName, "prefix/", 0)
+	uploads, err = store.ListMultipartUploads(bucketName, "prefix/", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListMultipartUploads with prefix failed: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestListParts(t *testing.T) {
 	}
 
 	// List parts
-	parts, err := store.ListParts(bucketName, objectKey, uploadID, 0)
+	parts, err := store.ListParts(bucketName, objectKey, uploadID, 0, 0)
 	if err != nil {
 		t.Fatalf("ListParts failed: %v", err)
 	}

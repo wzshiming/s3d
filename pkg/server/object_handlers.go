@@ -161,7 +161,8 @@ func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, buc
 		}
 	}
 
-	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, maxKeys)
+	// Fetch one extra object to determine if there are more results
+	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -171,13 +172,29 @@ func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
+	// Determine if results are truncated
+	isTruncated := len(objects) > maxKeys
+	var nextMarker string
+	if isTruncated {
+		// Remove the extra object
+		objects = objects[:maxKeys]
+		// Set next marker to the last object key
+		if len(objects) > 0 {
+			nextMarker = objects[len(objects)-1].Key
+		}
+	}
+
 	result := s3types.ListBucketResult{
 		Name:        bucket,
 		Prefix:      prefix,
 		Marker:      marker,
 		Delimiter:   delimiter,
 		MaxKeys:     maxKeys,
-		IsTruncated: false,
+		IsTruncated: isTruncated,
+	}
+
+	if isTruncated {
+		result.NextMarker = nextMarker
 	}
 
 	for _, obj := range objects {
@@ -213,7 +230,16 @@ func (s *S3Server) handleListObjectsV2(w http.ResponseWriter, r *http.Request, b
 		}
 	}
 
-	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, maxKeys)
+	// Determine the marker to use
+	marker := ""
+	if continuationToken != "" {
+		marker = continuationToken
+	} else if startAfter != "" {
+		marker = startAfter
+	}
+
+	// Fetch one extra object to determine if there are more results
+	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -223,15 +249,31 @@ func (s *S3Server) handleListObjectsV2(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	// Determine if results are truncated
+	isTruncated := len(objects) > maxKeys
+	var nextContinuationToken string
+	if isTruncated {
+		// Remove the extra object
+		objects = objects[:maxKeys]
+		// Set next continuation token to the last object key
+		if len(objects) > 0 {
+			nextContinuationToken = objects[len(objects)-1].Key
+		}
+	}
+
 	result := s3types.ListBucketResultV2{
 		Name:              bucket,
 		Prefix:            prefix,
 		Delimiter:         delimiter,
 		MaxKeys:           maxKeys,
 		KeyCount:          len(objects),
-		IsTruncated:       false,
+		IsTruncated:       isTruncated,
 		StartAfter:        startAfter,
 		ContinuationToken: continuationToken,
+	}
+
+	if isTruncated {
+		result.NextContinuationToken = nextContinuationToken
 	}
 
 	for _, obj := range objects {

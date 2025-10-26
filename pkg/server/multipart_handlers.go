@@ -185,6 +185,8 @@ func (s *S3Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Req
 func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Request, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
+	keyMarker := query.Get("key-marker")
+	uploadIDMarker := query.Get("upload-id-marker")
 	maxUploads := 1000
 	if mu := query.Get("max-uploads"); mu != "" {
 		if parsed, err := strconv.Atoi(mu); err == nil {
@@ -192,7 +194,8 @@ func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	uploads, err := s.storage.ListMultipartUploads(bucket, prefix, maxUploads)
+	// Fetch one extra upload to determine if there are more results
+	uploads, err := s.storage.ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker, maxUploads+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -202,10 +205,33 @@ func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Determine if results are truncated
+	isTruncated := len(uploads) > maxUploads
+	var nextKeyMarker, nextUploadIDMarker string
+	if isTruncated {
+		// Remove the extra upload
+		uploads = uploads[:maxUploads]
+		// Set next markers to the last upload
+		if len(uploads) > 0 {
+			nextKeyMarker = uploads[len(uploads)-1].Key
+			nextUploadIDMarker = uploads[len(uploads)-1].UploadID
+		}
+	}
+
 	result := s3types.ListMultipartUploadsResult{
 		Bucket:      bucket,
 		MaxUploads:  maxUploads,
-		IsTruncated: false,
+		IsTruncated: isTruncated,
+		KeyMarker:   keyMarker,
+	}
+
+	if uploadIDMarker != "" {
+		result.UploadIdMarker = uploadIDMarker
+	}
+
+	if isTruncated {
+		result.NextKeyMarker = nextKeyMarker
+		result.NextUploadIdMarker = nextUploadIDMarker
 	}
 
 	for _, upload := range uploads {
@@ -223,6 +249,12 @@ func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Req
 // handleListParts handles ListParts operation
 func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	query := r.URL.Query()
+	partNumberMarker := 0
+	if pnm := query.Get("part-number-marker"); pnm != "" {
+		if parsed, err := strconv.Atoi(pnm); err == nil {
+			partNumberMarker = parsed
+		}
+	}
 	maxParts := 1000
 	if mp := query.Get("max-parts"); mp != "" {
 		if parsed, err := strconv.Atoi(mp); err == nil {
@@ -230,7 +262,8 @@ func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucke
 		}
 	}
 
-	parts, err := s.storage.ListParts(bucket, key, uploadID, maxParts)
+	// Fetch one extra part to determine if there are more results
+	parts, err := s.storage.ListParts(bucket, key, uploadID, partNumberMarker, maxParts+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -242,13 +275,33 @@ func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucke
 		return
 	}
 
+	// Determine if results are truncated
+	isTruncated := len(parts) > maxParts
+	var nextPartNumberMarker int
+	if isTruncated {
+		// Remove the extra part
+		parts = parts[:maxParts]
+		// Set next marker to the last part number
+		if len(parts) > 0 {
+			nextPartNumberMarker = parts[len(parts)-1].PartNumber
+		}
+	}
+
 	result := s3types.ListPartsResult{
 		Bucket:       bucket,
 		Key:          key,
 		UploadId:     uploadID,
 		StorageClass: "STANDARD",
 		MaxParts:     maxParts,
-		IsTruncated:  false,
+		IsTruncated:  isTruncated,
+	}
+
+	if partNumberMarker > 0 {
+		result.PartNumberMarker = partNumberMarker
+	}
+
+	if isTruncated {
+		result.NextPartNumberMarker = nextPartNumberMarker
 	}
 
 	for _, part := range parts {

@@ -65,7 +65,7 @@ func TestObjectOperations(t *testing.T) {
 	}
 
 	// List objects
-	objects, _, err := store.ListObjects(bucketName, "", "", 0)
+	objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListObjects failed: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestListObjectsNonexistentBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err = store.ListObjects("nonexistent", "", "", 0)
+	_, _, err = store.ListObjects("nonexistent", "", "", "", 0)
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
