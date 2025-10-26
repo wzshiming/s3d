@@ -305,3 +305,106 @@ func TestPutObjectNonexistentBucket(t *testing.T) {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
 }
+
+func TestRenameObject(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	bucketName := "test-bucket-rename"
+	srcKey := "original.txt"
+	dstKey := "renamed.txt"
+	content := "Content to rename"
+
+	// Create bucket
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create source object
+	_, err = store.PutObject(bucketName, srcKey, bytes.NewReader([]byte(content)), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Rename object
+	err = store.RenameObject(bucketName, srcKey, dstKey)
+	if err != nil {
+		t.Fatalf("RenameObject failed: %v", err)
+	}
+
+	// Verify destination object exists
+	reader, info, err := store.GetObject(bucketName, dstKey)
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("Failed to read object: %v", err)
+	}
+
+	if string(data) != content {
+		t.Fatalf("Expected %q, got %q", content, string(data))
+	}
+
+	if info.Size != int64(len(content)) {
+		t.Fatalf("Expected size %d, got %d", len(content), info.Size)
+	}
+
+	// Verify source object no longer exists
+	_, _, err = store.GetObject(bucketName, srcKey)
+	if err != ErrObjectNotFound {
+		t.Fatal("Expected ErrObjectNotFound for original object after rename")
+	}
+}
+
+func TestRenameNonexistentObject(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.CreateBucket("test-bucket"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.RenameObject("test-bucket", "nonexistent.txt", "renamed.txt")
+	if err != ErrObjectNotFound {
+		t.Fatalf("Expected ErrObjectNotFound, got %v", err)
+	}
+}
+
+func TestRenameObjectNonexistentBucket(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.RenameObject("nonexistent", "key.txt", "renamed.txt")
+	if err != ErrBucketNotFound {
+		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
+	}
+}

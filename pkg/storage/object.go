@@ -317,3 +317,45 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 
 	return etag, nil
 }
+
+// RenameObject renames an object within the same bucket
+func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
+	// Verify bucket exists
+	if !s.BucketExists(bucket) {
+		return ErrBucketNotFound
+	}
+
+	// Get source object directory
+	srcObjectDir, err := s.safePath(bucket, srcKey)
+	if err != nil {
+		return err
+	}
+
+	srcDataPath := filepath.Join(srcObjectDir, dataFile)
+
+	// Check if source exists
+	if _, err := os.Stat(srcDataPath); err != nil {
+		if os.IsNotExist(err) {
+			return ErrObjectNotFound
+		}
+		return err
+	}
+
+	// Get destination object directory
+	dstObjectDir, err := s.safePath(bucket, dstKey)
+	if err != nil {
+		return err
+	}
+
+	// Create parent directory for destination
+	if err := os.MkdirAll(filepath.Dir(dstObjectDir), 0755); err != nil {
+		return err
+	}
+
+	// Rename/move the object directory
+	if err := os.Rename(srcObjectDir, dstObjectDir); err != nil {
+		return err
+	}
+
+	return nil
+}

@@ -82,6 +82,48 @@ test_delete_object() {
     fi
 }
 
+# Test 11: Rename object
+test_rename_object() {
+    echo -e "\n${YELLOW}Test: Rename object${NC}"
+    # Upload a test file for renaming
+    echo "Content for rename test" > "${TEST_DATA_DIR}/rename-test.txt"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/rename-test.txt" s3://${TEST_BUCKET}/rename-test.txt
+    
+    # Rename the object
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api rename-object \
+        --bucket ${TEST_BUCKET} \
+        --key renamed-test.txt \
+        --rename-source ${TEST_BUCKET}/rename-test.txt
+    
+    # Verify renamed object exists
+    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "renamed-test.txt"; then
+        echo -e "${GREEN}✓ Object renamed successfully${NC}"
+    else
+        echo -e "${RED}✗ Renamed object not found${NC}"
+        exit 1
+    fi
+    
+    # Verify original object no longer exists
+    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "rename-test.txt"; then
+        echo -e "${RED}✗ Original object still exists after rename${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}✓ Original object removed after rename${NC}"
+    fi
+    
+    # Verify content is preserved
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp s3://${TEST_BUCKET}/renamed-test.txt "${TEST_DATA_DIR}/renamed-downloaded.txt"
+    if diff "${TEST_DATA_DIR}/rename-test.txt" "${TEST_DATA_DIR}/renamed-downloaded.txt" > /dev/null; then
+        echo -e "${GREEN}✓ Renamed object content verified${NC}"
+    else
+        echo -e "${RED}✗ Renamed object content does not match original${NC}"
+        exit 1
+    fi
+    
+    # Clean up
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rm s3://${TEST_BUCKET}/renamed-test.txt
+}
+
 # Test 13: Remove all objects
 test_remove_all_objects() {
     echo -e "\n${YELLOW}Test: Remove all objects${NC}"

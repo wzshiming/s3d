@@ -24,6 +24,7 @@ test_download_file
 test_upload_multiple_files
 test_list_with_prefix
 test_copy_object
+test_rename_object
 test_delete_object
 
 # Run advanced tests
