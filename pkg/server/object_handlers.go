@@ -11,13 +11,6 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
-// urlSafeToStdBase64 converts URL-safe base64 to standard base64
-func urlSafeToStdBase64(urlSafe string) string {
-	std := strings.ReplaceAll(urlSafe, "-", "+")
-	std = strings.ReplaceAll(std, "_", "/")
-	return std
-}
-
 // handlePutObject handles PutObject operation
 func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	contentType := r.Header.Get("Content-Type")

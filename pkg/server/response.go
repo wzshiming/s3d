@@ -3,9 +3,17 @@ package server
 import (
 	"encoding/xml"
 	"net/http"
+	"strings"
 
 	"github.com/wzshiming/s3d/pkg/s3types"
 )
+
+// urlSafeToStdBase64 converts URL-safe base64 to standard base64
+func urlSafeToStdBase64(urlSafe string) string {
+	std := strings.ReplaceAll(urlSafe, "-", "+")
+	std = strings.ReplaceAll(std, "_", "/")
+	return std
+}
 
 // xmlResponse writes an XML response
 func (s *S3Server) xmlResponse(w http.ResponseWriter, data any, status int) {
