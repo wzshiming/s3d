@@ -265,35 +265,71 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 }
 
 // ListMultipartUploads lists all in-progress multipart uploads for a bucket
-func (s *Storage) ListMultipartUploads(bucket, key string, maxUploads int) ([]MultipartUpload, error) {
+func (s *Storage) ListMultipartUploads(bucket, prefix string, maxUploads int) ([]MultipartUpload, error) {
+	return s.ListMultipartUploadsWithMarker(bucket, prefix, "", "", maxUploads)
+}
+
+// ListMultipartUploadsWithMarker lists multipart uploads with pagination support
+func (s *Storage) ListMultipartUploadsWithMarker(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int) ([]MultipartUpload, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key)
-	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+	uploadBaseDir := filepath.Join(s.basePath, uploadsDir, bucket)
+	if _, err := os.Stat(uploadBaseDir); os.IsNotExist(err) {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(uploadDir)
-	if err != nil {
-		return nil, err
-	}
-
 	var uploads []MultipartUpload
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
+
+	// Walk through the uploads directory
+	err := filepath.Walk(uploadBaseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			continue
+			return nil // Skip errors
 		}
 
-		uploadID := entry.Name()
+		if !info.IsDir() {
+			return nil
+		}
 
-		// Retrieve metadata or other information about the upload
+		// Get relative path from uploadBaseDir
+		relPath, err := filepath.Rel(uploadBaseDir, path)
+		if err != nil || relPath == "." {
+			return nil
+		}
+
+		// Check if this directory contains a meta file (indicating it's an upload directory)
+		metaPath := filepath.Join(path, metaFile)
+		if _, err := os.Stat(metaPath); os.IsNotExist(err) {
+			return nil // Not an upload directory, keep walking
+		}
+
+		// This is an upload directory: .uploads/bucket/key/uploadID
+		// Split the relative path to get key and uploadID
+		parts := strings.Split(filepath.ToSlash(relPath), "/")
+		if len(parts) < 2 {
+			return nil
+		}
+
+		uploadID := parts[len(parts)-1]
+		key := strings.Join(parts[:len(parts)-1], "/")
+
+		// Apply prefix filter
+		if prefix != "" && !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+
+		// Apply marker filter
+		if keyMarker != "" {
+			if key < keyMarker {
+				return nil
+			}
+			if key == keyMarker && uploadIDMarker != "" && uploadID <= uploadIDMarker {
+				return nil
+			}
+		}
+
 		upload := MultipartUpload{
 			UploadID: uploadID,
 			Bucket:   bucket,
@@ -302,11 +338,19 @@ func (s *Storage) ListMultipartUploads(bucket, key string, maxUploads int) ([]Mu
 		}
 
 		uploads = append(uploads, upload)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	// Sort by creation time
+	// Sort by key, then by upload ID
 	sort.Slice(uploads, func(i, j int) bool {
-		return uploads[i].Created.Before(uploads[j].Created)
+		if uploads[i].Key != uploads[j].Key {
+			return uploads[i].Key < uploads[j].Key
+		}
+		return uploads[i].UploadID < uploads[j].UploadID
 	})
 
 	// Apply maxUploads limit
@@ -319,6 +363,11 @@ func (s *Storage) ListMultipartUploads(bucket, key string, maxUploads int) ([]Mu
 
 // ListParts lists all uploaded parts for a multipart upload
 func (s *Storage) ListParts(bucket, key, uploadID string, maxParts int) ([]Part, error) {
+	return s.ListPartsWithMarker(bucket, key, uploadID, 0, maxParts)
+}
+
+// ListPartsWithMarker lists parts with pagination support
+func (s *Storage) ListPartsWithMarker(bucket, key, uploadID string, partNumberMarker, maxParts int) ([]Part, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -350,6 +399,11 @@ func (s *Storage) ListParts(bucket, key, uploadID string, maxParts int) ([]Part,
 		var etag string
 		n, err := fmt.Sscanf(name, "%d-%s", &partNumber, &etag)
 		if err != nil || n != 2 {
+			continue
+		}
+
+		// Apply marker filter
+		if partNumberMarker > 0 && partNumber <= partNumberMarker {
 			continue
 		}
 

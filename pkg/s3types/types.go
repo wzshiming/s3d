@@ -46,6 +46,7 @@ type ListBucketResult struct {
 	Name           string         `xml:"Name"`
 	Prefix         string         `xml:"Prefix"`
 	Marker         string         `xml:"Marker,omitempty"`
+	NextMarker     string         `xml:"NextMarker,omitempty"`
 	Delimiter      string         `xml:"Delimiter,omitempty"`
 	MaxKeys        int            `xml:"MaxKeys"`
 	IsTruncated    bool           `xml:"IsTruncated"`

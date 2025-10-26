@@ -138,6 +138,11 @@ func (s *Storage) DeleteObject(bucket, key string) error {
 
 // ListObjects lists objects in a bucket with optional prefix and delimiter
 func (s *Storage) ListObjects(bucket, prefix, delimiter string, maxKeys int) ([]ObjectInfo, []string, error) {
+	return s.ListObjectsWithMarker(bucket, prefix, delimiter, "", maxKeys)
+}
+
+// ListObjectsWithMarker lists objects in a bucket with optional prefix, delimiter, and marker for pagination
+func (s *Storage) ListObjectsWithMarker(bucket, prefix, delimiter, marker string, maxKeys int) ([]ObjectInfo, []string, error) {
 	if !s.BucketExists(bucket) {
 		return nil, nil, ErrBucketNotFound
 	}
@@ -171,6 +176,11 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter string, maxKeys int) ([]
 
 			// Apply prefix filter
 			if prefix != "" && !strings.HasPrefix(objectKey, prefix) {
+				return nil
+			}
+
+			// Apply marker filter - only include objects after the marker
+			if marker != "" && objectKey <= marker {
 				return nil
 			}
 
