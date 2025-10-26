@@ -143,11 +143,64 @@ func TestObjectOperations(t *testing.T) {
 		}
 	})
 
-	// Test: Delete object
-	t.Run("DeleteObject", func(t *testing.T) {
-		_, err := ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+	// Test: Rename object
+	renamedKey := "renamed-object.txt"
+	t.Run("RenameObject", func(t *testing.T) {
+		// Put a new object for renaming
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
 			Key:    aws.String(objectKey),
+			Body:   strings.NewReader(objectContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to put object for rename: %v", err)
+		}
+
+		// Rename the object
+		_, err = ts.client.RenameObject(ts.ctx, &s3.RenameObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(renamedKey),
+			RenameSource: aws.String(fmt.Sprintf("%s/%s", bucketName, objectKey)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to rename object: %v", err)
+		}
+
+		// Verify renamed object exists
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(renamedKey),
+		})
+		if err != nil {
+			t.Fatalf("Failed to get renamed object: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, err := io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read renamed object body: %v", err)
+		}
+
+		if string(data) != objectContent {
+			t.Errorf("Renamed object content mismatch: got %q, want %q", string(data), objectContent)
+		}
+
+		// Verify original object no longer exists
+		_, err = ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		})
+		if err == nil {
+			t.Errorf("Expected error when getting original object after rename")
+		}
+	})
+
+	// Test: Delete object
+	t.Run("DeleteObject", func(t *testing.T) {
+		// Delete the renamed object
+		_, err := ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(renamedKey),
 		})
 		if err != nil {
 			t.Fatalf("Failed to delete object: %v", err)
@@ -156,7 +209,7 @@ func TestObjectOperations(t *testing.T) {
 		// Verify object is deleted
 		_, err = ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucketName),
-			Key:    aws.String(objectKey),
+			Key:    aws.String(renamedKey),
 		})
 		if err == nil {
 			t.Errorf("Expected error when getting deleted object")
