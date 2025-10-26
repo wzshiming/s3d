@@ -168,13 +168,17 @@ func TestCopyObject(t *testing.T) {
 	}
 
 	// Copy object
-	etag, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	etag, crc32checksum, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
 
 	if etag == "" {
 		t.Fatal("ETag should not be empty")
+	}
+
+	if crc32checksum == "" {
+		t.Fatal("CRC32 checksum should not be empty")
 	}
 
 	// Verify destination object
@@ -264,7 +268,7 @@ func TestCopyNonexistentObject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = store.CopyObject("src", "nonexistent.txt", "dst", "copy.txt")
+	_, _, err = store.CopyObject("src", "nonexistent.txt", "dst", "copy.txt")
 	if err != ErrObjectNotFound {
 		t.Fatalf("Expected ErrObjectNotFound, got %v", err)
 	}
