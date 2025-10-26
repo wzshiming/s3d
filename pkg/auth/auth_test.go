@@ -140,7 +140,9 @@ func TestAuthenticateValidCredential(t *testing.T) {
 	auth.AddCredentials("valid-key", "valid-secret")
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
-	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=valid-key/20230101/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-date,Signature=34f4af3de33f80767286dd6f1d83e9737de4f9ab74ecc5f7bfbffe19338830cb")
+	req.Host = "example.amazonaws.com"
+	req.Header.Set("X-Amz-Date", "20230101T000000Z")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=valid-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=b06c3241e27bbe06de4271ac6617cd88056188eb970ce7123f5aa7ce5e5b05bf")
 
 	_, err := auth.Authenticate(req)
 	if err != nil {
