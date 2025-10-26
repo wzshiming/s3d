@@ -42,8 +42,8 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string
 	}
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
-	metadata := map[string]string{
-		"Content-Type": contentType,
+	metadata := &Metadata{
+		ContentType: contentType,
 	}
 	if err := s.saveMetadata(uploadMetaPath, metadata); err != nil {
 		return "", err
@@ -235,7 +235,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return "", err
 	}
 
-	metadata["ETag"] = etag
+	metadata.ETag = etag
 	if err := s.saveMetadata(metaPath, metadata); err != nil {
 		return "", err
 	}
