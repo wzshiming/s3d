@@ -162,7 +162,7 @@ func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, buc
 	}
 
 	// Fetch one extra object to determine if there are more results
-	objects, commonPrefixes, err := s.storage.ListObjectsWithMarker(bucket, prefix, delimiter, marker, maxKeys+1)
+	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -239,7 +239,7 @@ func (s *S3Server) handleListObjectsV2(w http.ResponseWriter, r *http.Request, b
 	}
 
 	// Fetch one extra object to determine if there are more results
-	objects, commonPrefixes, err := s.storage.ListObjectsWithMarker(bucket, prefix, delimiter, marker, maxKeys+1)
+	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)

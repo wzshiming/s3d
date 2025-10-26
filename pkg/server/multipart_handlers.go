@@ -195,7 +195,7 @@ func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Req
 	}
 
 	// Fetch one extra upload to determine if there are more results
-	uploads, err := s.storage.ListMultipartUploadsWithMarker(bucket, prefix, keyMarker, uploadIDMarker, maxUploads+1)
+	uploads, err := s.storage.ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker, maxUploads+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -263,7 +263,7 @@ func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucke
 	}
 
 	// Fetch one extra part to determine if there are more results
-	parts, err := s.storage.ListPartsWithMarker(bucket, key, uploadID, partNumberMarker, maxParts+1)
+	parts, err := s.storage.ListParts(bucket, key, uploadID, partNumberMarker, maxParts+1)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)

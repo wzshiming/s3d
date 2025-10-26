@@ -265,12 +265,8 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 }
 
 // ListMultipartUploads lists all in-progress multipart uploads for a bucket
-func (s *Storage) ListMultipartUploads(bucket, prefix string, maxUploads int) ([]MultipartUpload, error) {
-	return s.ListMultipartUploadsWithMarker(bucket, prefix, "", "", maxUploads)
-}
-
-// ListMultipartUploadsWithMarker lists multipart uploads with pagination support
-func (s *Storage) ListMultipartUploadsWithMarker(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int) ([]MultipartUpload, error) {
+// ListMultipartUploads lists multipart uploads with pagination support
+func (s *Storage) ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int) ([]MultipartUpload, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -361,13 +357,8 @@ func (s *Storage) ListMultipartUploadsWithMarker(bucket, prefix, keyMarker, uplo
 	return uploads, nil
 }
 
-// ListParts lists all uploaded parts for a multipart upload
-func (s *Storage) ListParts(bucket, key, uploadID string, maxParts int) ([]Part, error) {
-	return s.ListPartsWithMarker(bucket, key, uploadID, 0, maxParts)
-}
-
-// ListPartsWithMarker lists parts with pagination support
-func (s *Storage) ListPartsWithMarker(bucket, key, uploadID string, partNumberMarker, maxParts int) ([]Part, error) {
+// ListParts lists all uploaded parts for a multipart upload with pagination support
+func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker, maxParts int) ([]Part, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
