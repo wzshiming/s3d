@@ -9,7 +9,7 @@ An S3-compatible server with local storage
 ## Features
 
 - Bucket operations (create, list, delete, head)
-- Object operations (put, get, delete, head, copy)
+- Object operations (put, get, delete, head, copy, rename)
 - ListObjects v1 and v2 with prefix/delimiter
 - Multipart uploads
 - AWS Signature V4 authentication
