@@ -1,4 +1,4 @@
-.PHONY: build test test-integration test-e2e
+.PHONY: build test test-integration test-e2e test-compatibility
 
 # Build the server binary
 build:
@@ -15,3 +15,7 @@ test-integration:
 # Run e2e tests with AWS CLI
 test-e2e: build
 	./test/e2e/run_all.sh
+
+# Run S3 compatibility tests using Ceph s3-tests
+test-compatibility:
+	./test/compatibility/run_compatibility.sh
