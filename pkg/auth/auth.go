@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -69,13 +70,14 @@ func (a *Authenticator) Authenticate(r *http.Request) (string, error) {
 // authenticateV4 validates AWS Signature Version 4
 func (a *Authenticator) authenticateV4(r *http.Request, authHeader string) (string, error) {
 	// Parse authorization header
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 {
+	// Format: AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=...
+	if !strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256 ") {
 		return "", fmt.Errorf("invalid authorization header format")
 	}
 
+	authParams := strings.TrimPrefix(authHeader, "AWS4-HMAC-SHA256 ")
 	params := make(map[string]string)
-	for _, part := range strings.Split(parts[1], ",") {
+	for _, part := range strings.Split(authParams, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) == 2 {
 			params[kv[0]] = kv[1]
@@ -170,7 +172,10 @@ func (a *Authenticator) createCanonicalRequest(r *http.Request, signedHeaders st
 	var queryParams []string
 	for key := range queryString {
 		for _, value := range queryString[key] {
-			queryParams = append(queryParams, fmt.Sprintf("%s=%s", key, value))
+			// AWS SigV4 requires URL encoding of query parameters
+			encodedKey := url.QueryEscape(key)
+			encodedValue := url.QueryEscape(value)
+			queryParams = append(queryParams, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
 		}
 	}
 	sort.Strings(queryParams)
@@ -180,7 +185,13 @@ func (a *Authenticator) createCanonicalRequest(r *http.Request, signedHeaders st
 	headersList := strings.Split(signedHeaders, ";")
 	var canonicalHeaders []string
 	for _, header := range headersList {
-		value := r.Header.Get(header)
+		var value string
+		if strings.ToLower(header) == "host" {
+			// Host header is special in Go and stored in r.Host
+			value = r.Host
+		} else {
+			value = r.Header.Get(header)
+		}
 		canonicalHeaders = append(canonicalHeaders, fmt.Sprintf("%s:%s\n", strings.ToLower(header), strings.TrimSpace(value)))
 	}
 	sort.Strings(canonicalHeaders)

@@ -47,4 +47,14 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}All e2e tests passed successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
+# Run authentication tests
+echo -e "\n${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Running authentication e2e tests...${NC}"
+echo -e "${YELLOW}========================================${NC}"
+"${SCRIPT_DIR}/auth_tests.sh"
+
+echo -e "\n${GREEN}========================================${NC}"
+echo -e "${GREEN}All e2e tests (including auth) passed!${NC}"
+echo -e "${GREEN}========================================${NC}"
+
 exit 0
