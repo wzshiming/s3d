@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -54,11 +53,7 @@ func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucke
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
 
-	if _, err := io.Copy(w, reader); err != nil {
-		// Headers already sent, can't return error response
-		// Log the error but continue
-		return
-	}
+	http.ServeContent(w, r, key, info.LastModified, reader)
 }
 
 // handleHeadObject handles HeadObject operation

@@ -65,7 +65,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 }
 
 // GetObject retrieves an object
-func (s *Storage) GetObject(bucket, key string) (io.ReadCloser, *ObjectInfo, error) {
+func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, nil, ErrBucketNotFound
 	}
