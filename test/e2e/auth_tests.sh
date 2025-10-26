@@ -19,6 +19,10 @@ export AUTH_TEST_DATA_DIR=$(mktemp -d)
 export AUTH_SERVER_DATA_DIR=$(mktemp -d)
 export AUTH_SERVER_PID=""
 
+# Set restrictive permissions on temporary directories
+chmod 700 "${AUTH_TEST_DATA_DIR}"
+chmod 700 "${AUTH_SERVER_DATA_DIR}"
+
 # Test credentials
 export TEST_ACCESS_KEY="test-access-key-e2e"
 export TEST_SECRET_KEY="test-secret-key-e2e"
@@ -27,7 +31,9 @@ export TEST_SECRET_KEY="test-secret-key-e2e"
 cleanup_auth() {
     echo -e "\n${YELLOW}Cleaning up auth tests...${NC}"
     if [ -n "$AUTH_SERVER_PID" ]; then
-        kill $AUTH_SERVER_PID 2>/dev/null || true
+        kill -TERM $AUTH_SERVER_PID 2>/dev/null || true
+        sleep 1
+        kill -KILL $AUTH_SERVER_PID 2>/dev/null || true
         wait $AUTH_SERVER_PID 2>/dev/null || true
     fi
     rm -rf "${AUTH_TEST_DATA_DIR}"
@@ -78,7 +84,7 @@ setup_auth() {
     # Check if AWS CLI is installed
     if ! command -v aws &> /dev/null; then
         echo -e "${RED}AWS CLI is not installed. Please install it first.${NC}"
-        echo "Install with: pip install awscli"
+        echo "See: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         exit 1
     fi
 
@@ -101,8 +107,9 @@ test_auth_no_credentials() {
     unset AWS_ACCESS_KEY_ID
     unset AWS_SECRET_ACCESS_KEY
     
-    # This should fail with authentication error
-    if aws --endpoint-url="${AUTH_SERVER_ADDR}" --no-sign-request s3 ls 2>&1 | grep -q "403"; then
+    # This should fail with authentication error (without --no-sign-request, it will try to sign with no credentials)
+    # We expect a 403 Forbidden error
+    if curl -s -o /dev/null -w "%{http_code}" "${AUTH_SERVER_ADDR}/" | grep -q "403"; then
         echo -e "${GREEN}✓ Request correctly rejected without credentials${NC}"
     else
         # Restore credentials before exiting
