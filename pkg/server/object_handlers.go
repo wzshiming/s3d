@@ -70,13 +70,12 @@ func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, buck
 		}
 		return
 	}
-	reader.Close()
 
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
+	http.ServeContent(w, r, key, info.LastModified, reader)
 }
 
 // handleDeleteObject handles DeleteObject operation
