@@ -2,7 +2,9 @@ package storage
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,9 +38,10 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while writing
+	// Calculate MD5 and CRC32 while writing
 	hash := md5.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	crc := crc32.NewIEEE()
+	writer := io.MultiWriter(tmpFile, hash, crc)
 
 	if _, err := io.Copy(writer, data); err != nil {
 		tmpFile.Close()
@@ -53,9 +56,19 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 
 	// Store metadata
 	etag := hex.EncodeToString(hash.Sum(nil))
+	crc32Sum := crc.Sum32()
+	crc32Bytes := []byte{
+		byte(crc32Sum >> 24),
+		byte(crc32Sum >> 16),
+		byte(crc32Sum >> 8),
+		byte(crc32Sum),
+	}
+	crc32Base64 := base64.StdEncoding.EncodeToString(crc32Bytes)
+	
 	metadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
+		CRC32:       crc32Base64,
 	}
 	if err := s.saveMetadata(metaPath, metadata); err != nil {
 		return "", err
@@ -107,6 +120,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		ETag:         metadata.ETag,
 		LastModified: fileInfo.ModTime(),
 		ContentType:  metadata.ContentType,
+		CRC32:        metadata.CRC32,
 	}
 
 	if info.ContentType == "" {
@@ -200,6 +214,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 				ETag:         metadata.ETag,
 				LastModified: info.ModTime(),
 				ContentType:  metadata.ContentType,
+				CRC32:        metadata.CRC32,
 			})
 		}
 
@@ -231,21 +246,22 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 }
 
 // CopyObject copies an object from one location to another
-func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (string, error) {
+// Returns (etag, crc32, error)
+func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (string, string, error) {
 	// Verify source bucket exists
 	if !s.BucketExists(srcBucket) {
-		return "", ErrBucketNotFound
+		return "", "", ErrBucketNotFound
 	}
 
 	// Verify destination bucket exists
 	if !s.BucketExists(dstBucket) {
-		return "", ErrBucketNotFound
+		return "", "", ErrBucketNotFound
 	}
 
 	// Get source object directory
 	srcObjectDir, err := s.safePath(srcBucket, srcKey)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	srcDataPath := filepath.Join(srcObjectDir, dataFile)
@@ -255,9 +271,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	srcFile, err := os.Open(srcDataPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", ErrObjectNotFound
+			return "", "", ErrObjectNotFound
 		}
-		return "", err
+		return "", "", err
 	}
 	defer srcFile.Close()
 
@@ -272,12 +288,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// Get destination object directory
 	dstObjectDir, err := s.safePath(dstBucket, dstKey)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Create destination object directory
 	if err := os.MkdirAll(dstObjectDir, 0755); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	dstDataPath := filepath.Join(dstObjectDir, dataFile)
@@ -286,36 +302,47 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// Create temp file for destination
 	tmpFile, err := os.CreateTemp(dstObjectDir, ".tmp-*")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Copy data and calculate MD5
+	// Copy data and calculate MD5 and CRC32
 	hash := md5.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	crc := crc32.NewIEEE()
+	writer := io.MultiWriter(tmpFile, hash, crc)
 
 	if _, err := io.Copy(writer, srcFile); err != nil {
 		tmpFile.Close()
-		return "", err
+		return "", "", err
 	}
 	tmpFile.Close()
 
 	// Move temp file to final location
 	if err := os.Rename(tmpFile.Name(), dstDataPath); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Store metadata
 	etag := hex.EncodeToString(hash.Sum(nil))
+	crc32Sum := crc.Sum32()
+	crc32Bytes := []byte{
+		byte(crc32Sum >> 24),
+		byte(crc32Sum >> 16),
+		byte(crc32Sum >> 8),
+		byte(crc32Sum),
+	}
+	crc32Base64 := base64.StdEncoding.EncodeToString(crc32Bytes)
+	
 	dstMetadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
+		CRC32:       crc32Base64,
 	}
 	if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return etag, nil
+	return etag, crc32Base64, nil
 }
 
 // RenameObject renames an object within the same bucket

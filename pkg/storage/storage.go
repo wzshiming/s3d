@@ -32,6 +32,7 @@ type ObjectInfo struct {
 	ETag         string
 	LastModified time.Time
 	ContentType  string
+	CRC32        string
 }
 
 // BucketInfo contains metadata about a bucket
@@ -158,6 +159,7 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 type Metadata struct {
 	ContentType string `json:"Content-Type,omitempty"`
 	ETag        string `json:"ETag,omitempty"`
+	CRC32       string `json:"CRC32,omitempty"`
 }
 
 // saveMetadata saves object metadata

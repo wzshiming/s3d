@@ -52,6 +52,9 @@ func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucke
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
+	if info.CRC32 != "" {
+		w.Header().Set("x-amz-checksum-crc32", info.CRC32)
+	}
 
 	http.ServeContent(w, r, key, info.LastModified, reader)
 }
@@ -75,6 +78,9 @@ func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, buck
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
+	if info.CRC32 != "" {
+		w.Header().Set("x-amz-checksum-crc32", info.CRC32)
+	}
 	http.ServeContent(w, r, key, info.LastModified, reader)
 }
 
@@ -116,7 +122,7 @@ func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstB
 	srcKey := parts[1]
 
 	// Perform copy
-	etag, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	etag, crc32checksum, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -127,6 +133,11 @@ func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstB
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// Set checksum header
+	if crc32checksum != "" {
+		w.Header().Set("x-amz-checksum-crc32", crc32checksum)
 	}
 
 	result := s3types.CopyObjectResult{
