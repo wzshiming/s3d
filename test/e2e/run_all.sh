@@ -29,6 +29,7 @@ test_delete_object
 # Run advanced tests
 test_multipart_upload
 test_sync_directory
+test_upload_part_copy
 
 # Cleanup objects
 test_remove_all_objects

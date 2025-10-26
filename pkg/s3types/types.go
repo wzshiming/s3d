@@ -147,6 +147,13 @@ type CopyObjectResult struct {
 	ETag         string    `xml:"ETag"`
 }
 
+// CopyPartResult is the response for UploadPartCopy operation
+type CopyPartResult struct {
+	XMLName      xml.Name  `xml:"CopyPartResult"`
+	LastModified time.Time `xml:"LastModified"`
+	ETag         string    `xml:"ETag"`
+}
+
 // Error represents an S3 error response
 type Error struct {
 	XMLName xml.Name `xml:"Error"`

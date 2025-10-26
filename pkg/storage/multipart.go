@@ -98,6 +98,75 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	return etag, nil
 }
 
+// UploadPartCopy uploads a part of a multipart upload by copying from an existing object
+func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, srcBucket, srcKey string) (string, error) {
+	if !s.BucketExists(bucket) {
+		return "", ErrBucketNotFound
+	}
+
+	if partNumber < 1 || partNumber > 10000 {
+		return "", ErrInvalidPartNumber
+	}
+
+	// Check filesystem for upload directory
+	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		return "", ErrInvalidUploadID
+	}
+
+	// Verify source bucket exists
+	if !s.BucketExists(srcBucket) {
+		return "", ErrBucketNotFound
+	}
+
+	// Get source object directory
+	srcObjectDir, err := s.safePath(srcBucket, srcKey)
+	if err != nil {
+		return "", err
+	}
+
+	srcDataPath := filepath.Join(srcObjectDir, dataFile)
+
+	// Check if source exists
+	srcFile, err := os.Open(srcDataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", ErrObjectNotFound
+		}
+		return "", err
+	}
+	defer srcFile.Close()
+
+	// Create temp file
+	tmpFile, err := os.CreateTemp(uploadDir, ".tmp-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Calculate MD5 while copying
+	hash := md5.New()
+	writer := io.MultiWriter(tmpFile, hash)
+
+	_, err = io.Copy(writer, srcFile)
+	if err != nil {
+		tmpFile.Close()
+		return "", err
+	}
+	tmpFile.Close()
+
+	etag := hex.EncodeToString(hash.Sum(nil))
+
+	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
+
+	// Move temp file to part file
+	if err := os.Rename(tmpFile.Name(), partPath); err != nil {
+		return "", err
+	}
+
+	return etag, nil
+}
+
 // CompleteMultipartUpload completes a multipart upload
 func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Part) (string, error) {
 	if !s.BucketExists(bucket) {
