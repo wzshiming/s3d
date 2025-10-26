@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -351,5 +352,242 @@ func TestListPartsInvalidUploadID(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("Expected error for invalid upload ID")
+	}
+}
+
+func TestUploadPartCopy(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-upload-part-copy"
+	sourceKey := "source-object.txt"
+	destKey := "dest-multipart.txt"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create source object
+	sourceContent := "This is the source object content for UploadPartCopy test"
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(sourceKey),
+		Body:   strings.NewReader(sourceContent),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Initiate multipart upload
+	initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(destKey),
+	})
+	if err != nil {
+		t.Fatalf("CreateMultipartUpload failed: %v", err)
+	}
+
+	uploadID := initOutput.UploadId
+
+	// Upload part 1 using regular UploadPart
+	part1Data := "Part 1 - regular upload"
+	part1Output, err := ts.client.UploadPart(ctx, &s3.UploadPartInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(destKey),
+		UploadId:   uploadID,
+		PartNumber: aws.Int32(1),
+		Body:       strings.NewReader(part1Data),
+	})
+	if err != nil {
+		t.Fatalf("UploadPart 1 failed: %v", err)
+	}
+
+	// Upload part 2 using UploadPartCopy
+	copySource := fmt.Sprintf("%s/%s", bucketName, sourceKey)
+	part2Output, err := ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(destKey),
+		UploadId:   uploadID,
+		PartNumber: aws.Int32(2),
+		CopySource: aws.String(copySource),
+	})
+	if err != nil {
+		t.Fatalf("UploadPartCopy failed: %v", err)
+	}
+
+	if part2Output.CopyPartResult == nil || part2Output.CopyPartResult.ETag == nil {
+		t.Fatal("UploadPartCopy did not return ETag")
+	}
+
+	// Complete multipart upload
+	_, err = ts.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(bucketName),
+		Key:      aws.String(destKey),
+		UploadId: uploadID,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{
+					PartNumber: aws.Int32(1),
+					ETag:       part1Output.ETag,
+				},
+				{
+					PartNumber: aws.Int32(2),
+					ETag:       part2Output.CopyPartResult.ETag,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompleteMultipartUpload failed: %v", err)
+	}
+
+	// Verify the final object
+	output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(destKey),
+	})
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	defer output.Body.Close()
+
+	data, err := io.ReadAll(output.Body)
+	if err != nil {
+		t.Fatalf("Failed to read object body: %v", err)
+	}
+
+	expectedContent := part1Data + sourceContent
+	if string(data) != expectedContent {
+		t.Fatalf("Expected content %q, got %q", expectedContent, string(data))
+	}
+}
+
+func TestUploadPartCopyNonExistentSource(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-upload-part-copy-no-src"
+	destKey := "dest.txt"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Initiate multipart upload
+	initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(destKey),
+	})
+	if err != nil {
+		t.Fatalf("CreateMultipartUpload failed: %v", err)
+	}
+
+	// Try to copy from non-existent source
+	copySource := fmt.Sprintf("%s/non-existent.txt", bucketName)
+	_, err = ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(destKey),
+		UploadId:   initOutput.UploadId,
+		PartNumber: aws.Int32(1),
+		CopySource: aws.String(copySource),
+	})
+
+	if err == nil {
+		t.Fatal("Expected error when copying from non-existent source")
+	}
+}
+
+func TestUploadPartCopyWithSpecialCharacters(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-upload-part-copy-special"
+	sourceKey := "source object with spaces.txt"
+	destKey := "dest-multipart.txt"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create source object with special characters in name
+	sourceContent := "Content for object with special characters"
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(sourceKey),
+		Body:   strings.NewReader(sourceContent),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Initiate multipart upload
+	initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(destKey),
+	})
+	if err != nil {
+		t.Fatalf("CreateMultipartUpload failed: %v", err)
+	}
+
+	uploadID := initOutput.UploadId
+
+	// Upload part using UploadPartCopy with URL-encoded source
+	copySource := fmt.Sprintf("%s/%s", bucketName, sourceKey)
+	part1Output, err := ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(destKey),
+		UploadId:   uploadID,
+		PartNumber: aws.Int32(1),
+		CopySource: aws.String(copySource),
+	})
+	if err != nil {
+		t.Fatalf("UploadPartCopy failed: %v", err)
+	}
+
+	if part1Output.CopyPartResult == nil || part1Output.CopyPartResult.ETag == nil {
+		t.Fatal("UploadPartCopy did not return ETag")
+	}
+
+	// Complete multipart upload
+	_, err = ts.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(bucketName),
+		Key:      aws.String(destKey),
+		UploadId: uploadID,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{
+					PartNumber: aws.Int32(1),
+					ETag:       part1Output.CopyPartResult.ETag,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompleteMultipartUpload failed: %v", err)
+	}
+
+	// Verify the final object
+	output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(destKey),
+	})
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	defer output.Body.Close()
+
+	data, err := io.ReadAll(output.Body)
+	if err != nil {
+		t.Fatalf("Failed to read object body: %v", err)
+	}
+
+	if string(data) != sourceContent {
+		t.Fatalf("Expected content %q, got %q", sourceContent, string(data))
 	}
 }
