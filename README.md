@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/wzshiming/s3d/actions/workflows/test.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/test.yml)
 [![Build](https://github.com/wzshiming/s3d/actions/workflows/build.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/build.yml)
+[![Lint](https://github.com/wzshiming/s3d/actions/workflows/lint.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/lint.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/wzshiming/s3d.svg)](https://pkg.go.dev/github.com/wzshiming/s3d)
 
 An S3-compatible server with local storage
@@ -23,6 +24,30 @@ An S3-compatible server with local storage
 - object tagging
 - lifecycle policies
 - etc.
+
+## Development
+
+### Building
+
+```bash
+make build
+```
+
+### Testing
+
+```bash
+make test
+make test-integration
+make test-e2e
+```
+
+### Linting
+
+This project uses [golangci-lint](https://golangci-lint.run/) for code quality checks.
+
+```bash
+make lint
+```
 
 ## License
 

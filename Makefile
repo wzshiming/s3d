@@ -1,8 +1,12 @@
-.PHONY: build test test-integration test-e2e
+.PHONY: build test test-integration test-e2e lint
 
 # Build the server binary
 build:
 	go build ./cmd/s3d
+
+# Run linter
+lint:
+	golangci-lint run
 
 # Run unit tests
 test:
