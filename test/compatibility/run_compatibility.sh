@@ -80,7 +80,7 @@ start_s3d() {
     S3D_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
     
     echo -e "${BLUE}Starting s3d server on port $S3D_PORT...${NC}"
-    "${SCRIPT_DIR}/s3d" -addr "127.0.0.1:$S3D_PORT" -root "$S3D_DATA_DIR" > "${SCRIPT_DIR}/s3d.log" 2>&1 &
+    "${SCRIPT_DIR}/s3d" -addr "127.0.0.1:$S3D_PORT" -data "$S3D_DATA_DIR" > "${SCRIPT_DIR}/s3d.log" 2>&1 &
     S3D_PID=$!
 
     # Wait for server to start
