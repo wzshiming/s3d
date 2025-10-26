@@ -36,3 +36,6 @@ go.work.sum
 
 # Data directory
 data/
+
+# Compatibility test logs
+test/compatibility/logs/
