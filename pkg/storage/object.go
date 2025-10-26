@@ -356,7 +356,11 @@ func (s *Storage) RenameObject(bucket, sourceKey, targetKey string) (string, err
 	// Move metadata file
 	if err := os.Rename(srcMetaPath, targetMetaPath); err != nil {
 		// Try to rollback data file move
-		os.Rename(targetDataPath, srcDataPath)
+		if rollbackErr := os.Rename(targetDataPath, srcDataPath); rollbackErr != nil {
+			// Rollback failed - log or handle the inconsistent state
+			// For now, we return the original error but the system is in an inconsistent state
+			return "", err
+		}
 		return "", err
 	}
 
