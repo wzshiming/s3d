@@ -1,7 +1,12 @@
 #!/bin/bash
 # Tests for multipart upload and advanced features
 
-source "$(dirname "$0")/common.sh"
+set -e
+
+# Source common utilities if not already sourced
+if [ -z "$SERVER_ADDR" ]; then
+    source "$(dirname "$0")/common.sh"
+fi
 
 # Test 11: Upload large file (multipart)
 test_multipart_upload() {
@@ -137,3 +142,28 @@ test_nested_paths() {
         exit 1
     fi
 }
+
+# Run tests if executed directly
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+    setup
+    
+    # Create bucket for tests
+    test_create_bucket() {
+        echo -e "\n${YELLOW}Test: Create bucket for advanced tests${NC}"
+        aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${TEST_BUCKET}
+        echo -e "${GREEN}✓ Bucket created${NC}"
+    }
+    
+    test_create_bucket
+    test_multipart_upload
+    test_sync_directory
+    test_upload_part_copy
+    test_nested_paths
+    
+    # Cleanup
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rb s3://${TEST_BUCKET} --force
+    
+    echo -e "\n${GREEN}========================================${NC}"
+    echo -e "${GREEN}Advanced tests passed successfully!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+fi

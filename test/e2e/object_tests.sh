@@ -1,7 +1,12 @@
 #!/bin/bash
 # Tests for object operations
 
-source "$(dirname "$0")/common.sh"
+set -e
+
+# Source common utilities if not already sourced
+if [ -z "$SERVER_ADDR" ]; then
+    source "$(dirname "$0")/common.sh"
+fi
 
 # Test 4: Upload a file
 test_upload_file() {
@@ -136,3 +141,33 @@ test_remove_all_objects() {
         exit 1
     fi
 }
+
+# Run tests if executed directly
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+    setup
+    
+    # Create bucket for tests
+    test_create_bucket() {
+        echo -e "\n${YELLOW}Test: Create bucket for object tests${NC}"
+        aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${TEST_BUCKET}
+        echo -e "${GREEN}✓ Bucket created${NC}"
+    }
+    
+    test_create_bucket
+    test_upload_file
+    test_list_objects
+    test_download_file
+    test_upload_multiple_files
+    test_list_with_prefix
+    test_copy_object
+    test_rename_object
+    test_delete_object
+    test_remove_all_objects
+    
+    # Cleanup bucket
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rb s3://${TEST_BUCKET}
+    
+    echo -e "\n${GREEN}========================================${NC}"
+    echo -e "${GREEN}Object tests passed successfully!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+fi

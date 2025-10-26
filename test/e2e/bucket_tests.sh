@@ -1,7 +1,12 @@
 #!/bin/bash
 # Tests for bucket operations
 
-source "$(dirname "$0")/common.sh"
+set -e
+
+# Source common utilities if not already sourced
+if [ -z "$SERVER_ADDR" ]; then
+    source "$(dirname "$0")/common.sh"
+fi
 
 # Test 1: List buckets (should be empty)
 test_list_empty_buckets() {
@@ -41,3 +46,17 @@ test_delete_bucket() {
         exit 1
     fi
 }
+
+# Run tests if executed directly
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+    setup
+    
+    test_list_empty_buckets
+    test_create_bucket
+    test_list_buckets
+    test_delete_bucket
+    
+    echo -e "\n${GREEN}========================================${NC}"
+    echo -e "${GREEN}Bucket tests passed successfully!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+fi
