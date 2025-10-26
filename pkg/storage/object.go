@@ -326,12 +326,17 @@ func (s *Storage) RenameObject(bucket, sourceKey, targetKey string) (string, err
 		return "", err
 	}
 
-	srcDataPath := filepath.Join(srcObjectDir, dataFile)
-	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
-
 	// Check if source exists
+	srcDataPath := filepath.Join(srcObjectDir, dataFile)
 	if _, err := os.Stat(srcDataPath); os.IsNotExist(err) {
 		return "", ErrObjectNotFound
+	}
+
+	// Load metadata to get ETag before moving
+	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
+	metadata, err := s.loadMetadata(srcMetaPath)
+	if err != nil {
+		return "", err
 	}
 
 	// Get target object directory
@@ -340,54 +345,16 @@ func (s *Storage) RenameObject(bucket, sourceKey, targetKey string) (string, err
 		return "", err
 	}
 
-	// Create target object directory
-	if err := os.MkdirAll(targetObjectDir, 0755); err != nil {
+	// Ensure parent directory exists
+	targetParentDir := filepath.Dir(targetObjectDir)
+	if err := os.MkdirAll(targetParentDir, 0755); err != nil {
 		return "", err
 	}
 
-	targetDataPath := filepath.Join(targetObjectDir, dataFile)
-	targetMetaPath := filepath.Join(targetObjectDir, metaFile)
-
-	// Move data file
-	if err := os.Rename(srcDataPath, targetDataPath); err != nil {
+	// Move entire object directory
+	if err := os.Rename(srcObjectDir, targetObjectDir); err != nil {
 		return "", err
 	}
 
-	// Move metadata file
-	if err := os.Rename(srcMetaPath, targetMetaPath); err != nil {
-		// Try to rollback data file move
-		if rollbackErr := os.Rename(targetDataPath, srcDataPath); rollbackErr != nil {
-			// Rollback failed - log or handle the inconsistent state
-			// For now, we return the original error but the system is in an inconsistent state
-			return "", err
-		}
-		return "", err
-	}
-
-	// Remove old object directory if empty
-	os.Remove(srcObjectDir)
-
-	// Load metadata to get ETag
-	metadata, err := s.loadMetadata(targetMetaPath)
-	if err != nil {
-		return "", err
-	}
-
-	etag := metadata["ETag"]
-	if etag == "" {
-		// Calculate ETag if not in metadata
-		file, err := os.Open(targetDataPath)
-		if err != nil {
-			return "", err
-		}
-		defer file.Close()
-
-		hash := md5.New()
-		if _, err := io.Copy(hash, file); err != nil {
-			return "", err
-		}
-		etag = hex.EncodeToString(hash.Sum(nil))
-	}
-
-	return etag, nil
+	return metadata["ETag"], nil
 }

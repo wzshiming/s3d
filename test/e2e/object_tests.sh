@@ -94,3 +94,47 @@ test_remove_all_objects() {
         exit 1
     fi
 }
+
+# Test: Rename object
+test_rename_object() {
+    echo -e "\n${YELLOW}Test: Rename object${NC}"
+    
+    # Upload a test file
+    echo "Original content" > "${TEST_DATA_DIR}/rename-test.txt"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/rename-test.txt" s3://${TEST_BUCKET}/original-file.txt
+    
+    # Rename the object using curl (since AWS CLI doesn't support RenameObject)
+    HTTP_CODE=$(curl -X POST "${SERVER_ADDR}/${TEST_BUCKET}/original-file.txt?targetKey=renamed-file.txt" -w "%{http_code}" -o /dev/null -s)
+    
+    if [ "$HTTP_CODE" -eq 200 ]; then
+        echo -e "${GREEN}✓ RenameObject API returned 200${NC}"
+    else
+        echo -e "${RED}✗ RenameObject API returned ${HTTP_CODE}, expected 200${NC}"
+        exit 1
+    fi
+    
+    # Verify the renamed object exists
+    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "renamed-file.txt"; then
+        echo -e "${GREEN}✓ Renamed object exists${NC}"
+    else
+        echo -e "${RED}✗ Renamed object not found${NC}"
+        exit 1
+    fi
+    
+    # Verify the original object no longer exists
+    if ! aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "original-file.txt"; then
+        echo -e "${GREEN}✓ Original object removed${NC}"
+    else
+        echo -e "${RED}✗ Original object still exists after rename${NC}"
+        exit 1
+    fi
+    
+    # Verify content is preserved
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp s3://${TEST_BUCKET}/renamed-file.txt "${TEST_DATA_DIR}/renamed-downloaded.txt"
+    if diff "${TEST_DATA_DIR}/rename-test.txt" "${TEST_DATA_DIR}/renamed-downloaded.txt" > /dev/null; then
+        echo -e "${GREEN}✓ Renamed object content preserved${NC}"
+    else
+        echo -e "${RED}✗ Renamed object content does not match original${NC}"
+        exit 1
+    fi
+}

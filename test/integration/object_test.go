@@ -163,3 +163,75 @@ func TestObjectOperations(t *testing.T) {
 		}
 	})
 }
+
+// TestRenameObject tests the RenameObject operation
+func TestRenameObject(t *testing.T) {
+	bucketName := "test-rename-object"
+	srcKey := "source-object.txt"
+	targetKey := "renamed-object.txt"
+	objectContent := "Content to be renamed"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+
+	// Put source object
+	_, err = ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+		Body:   strings.NewReader(objectContent),
+	})
+	if err != nil {
+		t.Fatalf("Failed to put source object: %v", err)
+	}
+
+	// Rename object using custom HTTP request
+	t.Run("RenameObject", func(t *testing.T) {
+		targetURL := fmt.Sprintf("%s/%s/%s?targetKey=%s", ts.serverURL, bucketName, srcKey, targetKey)
+		resp, err := ts.httpClient.Post(targetURL, "application/octet-stream", nil)
+		if err != nil {
+			t.Fatalf("Failed to rename object: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Fatalf("RenameObject returned status %d, expected 200", resp.StatusCode)
+		}
+	})
+
+	// Verify source object no longer exists
+	t.Run("SourceObjectDeleted", func(t *testing.T) {
+		_, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+		})
+		if err == nil {
+			t.Fatal("Expected error when getting source object after rename, got nil")
+		}
+	})
+
+	// Verify target object exists with correct content
+	t.Run("TargetObjectExists", func(t *testing.T) {
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(targetKey),
+		})
+		if err != nil {
+			t.Fatalf("Failed to get renamed object: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, err := io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read renamed object body: %v", err)
+		}
+
+		if string(data) != objectContent {
+			t.Errorf("Renamed object content mismatch: got %q, want %q", string(data), objectContent)
+		}
+	})
+}

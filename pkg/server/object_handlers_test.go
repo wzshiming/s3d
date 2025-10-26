@@ -580,146 +580,145 @@ func TestListObjectsV2(t *testing.T) {
 	}
 }
 
-
 func TestRenameObject(t *testing.T) {
-ctx := context.Background()
-bucketName := "test-rename-bucket"
-srcKey := "source.txt"
-targetKey := "renamed.txt"
-content := "Hello, this is source content!"
+	ctx := context.Background()
+	bucketName := "test-rename-bucket"
+	srcKey := "source.txt"
+	targetKey := "renamed.txt"
+	content := "Hello, this is source content!"
 
-// Create bucket
-_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("CreateBucket failed: %v", err)
-}
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
 
-// Create source object
-_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(srcKey),
-Body:   strings.NewReader(content),
-})
-if err != nil {
-t.Fatalf("PutObject failed: %v", err)
-}
+	// Create source object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+		Body:   strings.NewReader(content),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
 
-// Rename object using a custom HTTP request since AWS SDK doesn't have RenameObject
-targetURL := fmt.Sprintf("http://%s/%s/%s?targetKey=%s", ts.listener.Addr().String(), bucketName, srcKey, targetKey)
-req, err := http.NewRequest(http.MethodPost, targetURL, nil)
-if err != nil {
-t.Fatalf("Failed to create request: %v", err)
-}
+	// Rename object using a custom HTTP request since AWS SDK doesn't have RenameObject
+	targetURL := fmt.Sprintf("http://%s/%s/%s?targetKey=%s", ts.listener.Addr().String(), bucketName, srcKey, targetKey)
+	req, err := http.NewRequest(http.MethodPost, targetURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
 
-resp, err := http.DefaultClient.Do(req)
-if err != nil {
-t.Fatalf("RenameObject request failed: %v", err)
-}
-defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("RenameObject request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
-if resp.StatusCode != http.StatusOK {
-body, _ := io.ReadAll(resp.Body)
-t.Fatalf("RenameObject failed with status %d: %s", resp.StatusCode, string(body))
-}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("RenameObject failed with status %d: %s", resp.StatusCode, string(body))
+	}
 
-// Verify source object no longer exists
-_, err = ts.client.GetObject(ctx, &s3.GetObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(srcKey),
-})
-if err == nil {
-t.Fatalf("Expected error when getting source object after rename")
-}
+	// Verify source object no longer exists
+	_, err = ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+	})
+	if err == nil {
+		t.Fatalf("Expected error when getting source object after rename")
+	}
 
-// Verify target object exists with correct content
-output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(targetKey),
-})
-if err != nil {
-t.Fatalf("GetObject on renamed object failed: %v", err)
-}
-defer output.Body.Close()
+	// Verify target object exists with correct content
+	output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(targetKey),
+	})
+	if err != nil {
+		t.Fatalf("GetObject on renamed object failed: %v", err)
+	}
+	defer output.Body.Close()
 
-data, err := io.ReadAll(output.Body)
-if err != nil {
-t.Fatalf("Failed to read object body: %v", err)
-}
+	data, err := io.ReadAll(output.Body)
+	if err != nil {
+		t.Fatalf("Failed to read object body: %v", err)
+	}
 
-if string(data) != content {
-t.Fatalf("Expected content %q, got %q", content, string(data))
-}
+	if string(data) != content {
+		t.Fatalf("Expected content %q, got %q", content, string(data))
+	}
 }
 
 func TestRenameObjectNotFound(t *testing.T) {
-ctx := context.Background()
-bucketName := "test-rename-not-found"
+	ctx := context.Background()
+	bucketName := "test-rename-not-found"
 
-// Create bucket
-_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("CreateBucket failed: %v", err)
-}
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
 
-// Try to rename non-existent object
-targetURL := fmt.Sprintf("http://%s/%s/nonexistent.txt?targetKey=renamed.txt", ts.listener.Addr().String(), bucketName)
-req, err := http.NewRequest(http.MethodPost, targetURL, nil)
-if err != nil {
-t.Fatalf("Failed to create request: %v", err)
-}
+	// Try to rename non-existent object
+	targetURL := fmt.Sprintf("http://%s/%s/nonexistent.txt?targetKey=renamed.txt", ts.listener.Addr().String(), bucketName)
+	req, err := http.NewRequest(http.MethodPost, targetURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
 
-resp, err := http.DefaultClient.Do(req)
-if err != nil {
-t.Fatalf("RenameObject request failed: %v", err)
-}
-defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("RenameObject request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
-if resp.StatusCode != http.StatusNotFound {
-t.Fatalf("Expected 404 status for non-existent object, got %d", resp.StatusCode)
-}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("Expected 404 status for non-existent object, got %d", resp.StatusCode)
+	}
 }
 
 func TestRenameObjectMissingTargetKey(t *testing.T) {
-ctx := context.Background()
-bucketName := "test-rename-missing-target"
-srcKey := "source.txt"
+	ctx := context.Background()
+	bucketName := "test-rename-missing-target"
+	srcKey := "source.txt"
 
-// Create bucket
-_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("CreateBucket failed: %v", err)
-}
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
 
-// Create source object
-_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(srcKey),
-Body:   strings.NewReader("test content"),
-})
-if err != nil {
-t.Fatalf("PutObject failed: %v", err)
-}
+	// Create source object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+		Body:   strings.NewReader("test content"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
 
-// Try to rename without targetKey parameter
-targetURL := fmt.Sprintf("http://%s/%s/%s", ts.listener.Addr().String(), bucketName, srcKey)
-req, err := http.NewRequest(http.MethodPost, targetURL, nil)
-if err != nil {
-t.Fatalf("Failed to create request: %v", err)
-}
+	// Try to rename without targetKey parameter
+	targetURL := fmt.Sprintf("http://%s/%s/%s", ts.listener.Addr().String(), bucketName, srcKey)
+	req, err := http.NewRequest(http.MethodPost, targetURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
 
-resp, err := http.DefaultClient.Do(req)
-if err != nil {
-t.Fatalf("RenameObject request failed: %v", err)
-}
-defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("RenameObject request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
-if resp.StatusCode != http.StatusBadRequest {
-t.Fatalf("Expected 400 status for missing targetKey, got %d", resp.StatusCode)
-}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Expected 400 status for missing targetKey, got %d", resp.StatusCode)
+	}
 }

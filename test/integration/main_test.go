@@ -33,11 +33,13 @@ func TestMain(m *testing.M) {
 
 // testServer holds the components needed for integration testing
 type testServer struct {
-	tmpDir   string
-	listener net.Listener
-	srv      *http.Server
-	client   *s3.Client
-	ctx      context.Context
+	tmpDir     string
+	listener   net.Listener
+	srv        *http.Server
+	client     *s3.Client
+	httpClient *http.Client
+	serverURL  string
+	ctx        context.Context
 }
 
 // setupTestServer creates and starts a test server
@@ -96,11 +98,13 @@ func setupTestServer() *testServer {
 	})
 
 	return &testServer{
-		tmpDir:   tmpDir,
-		listener: listener,
-		srv:      srv,
-		client:   client,
-		ctx:      ctx,
+		tmpDir:     tmpDir,
+		listener:   listener,
+		srv:        srv,
+		client:     client,
+		httpClient: &http.Client{},
+		serverURL:  "http://" + addr,
+		ctx:        ctx,
 	}
 }
 
