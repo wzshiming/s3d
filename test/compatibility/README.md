@@ -2,6 +2,10 @@
 
 This directory contains compatibility tests for the s3d server based on the [Ceph s3-tests](https://github.com/ceph/s3-tests) test suite.
 
+## Quick Start
+
+**New to compatibility testing?** Check out the [Quick Start Guide](QUICKSTART.md) for step-by-step instructions.
+
 ## Overview
 
 The compatibility tests verify s3d's implementation against the standard S3 API using the widely-adopted Ceph s3-tests suite. These tests help identify which S3 features are supported and which are not.
