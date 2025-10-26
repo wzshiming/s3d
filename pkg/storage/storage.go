@@ -174,7 +174,7 @@ func (s *Storage) loadMetadata(path string) (*Metadata, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Metadata{}, nil
+			return nil, nil
 		}
 		return nil, err
 	}
