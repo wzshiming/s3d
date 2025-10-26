@@ -154,8 +154,14 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 	return objectPath, nil
 }
 
+// Metadata represents object metadata
+type Metadata struct {
+	ContentType string `json:"Content-Type,omitempty"`
+	ETag        string `json:"ETag,omitempty"`
+}
+
 // saveMetadata saves object metadata
-func (s *Storage) saveMetadata(path string, metadata map[string]string) error {
+func (s *Storage) saveMetadata(path string, metadata *Metadata) error {
 	data, err := json.Marshal(metadata)
 	if err != nil {
 		return err
@@ -164,18 +170,18 @@ func (s *Storage) saveMetadata(path string, metadata map[string]string) error {
 }
 
 // loadMetadata loads object metadata
-func (s *Storage) loadMetadata(path string) (map[string]string, error) {
+func (s *Storage) loadMetadata(path string) (*Metadata, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]string{}, nil
+			return &Metadata{}, nil
 		}
 		return nil, err
 	}
 
-	var metadata map[string]string
+	var metadata Metadata
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		return nil, err
 	}
-	return metadata, nil
+	return &metadata, nil
 }

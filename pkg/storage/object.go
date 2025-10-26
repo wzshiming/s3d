@@ -53,9 +53,9 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 
 	// Store metadata
 	etag := hex.EncodeToString(hash.Sum(nil))
-	metadata := map[string]string{
-		"Content-Type": contentType,
-		"ETag":         etag,
+	metadata := &Metadata{
+		ContentType: contentType,
+		ETag:        etag,
 	}
 	if err := s.saveMetadata(metaPath, metadata); err != nil {
 		return "", err
@@ -104,9 +104,9 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	info := &ObjectInfo{
 		Key:          key,
 		Size:         fileInfo.Size(),
-		ETag:         metadata["ETag"],
+		ETag:         metadata.ETag,
 		LastModified: fileInfo.ModTime(),
-		ContentType:  metadata["Content-Type"],
+		ContentType:  metadata.ContentType,
 	}
 
 	if info.ContentType == "" {
@@ -197,9 +197,9 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			objects = append(objects, ObjectInfo{
 				Key:          objectKey,
 				Size:         info.Size(),
-				ETag:         metadata["ETag"],
+				ETag:         metadata.ETag,
 				LastModified: info.ModTime(),
-				ContentType:  metadata["Content-Type"],
+				ContentType:  metadata.ContentType,
 			})
 		}
 
@@ -264,7 +264,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// Get source metadata
 	srcMetadata, _ := s.loadMetadata(srcMetaPath)
 
-	contentType := srcMetadata["Content-Type"]
+	contentType := srcMetadata.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -307,9 +307,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 
 	// Store metadata
 	etag := hex.EncodeToString(hash.Sum(nil))
-	dstMetadata := map[string]string{
-		"Content-Type": contentType,
-		"ETag":         etag,
+	dstMetadata := &Metadata{
+		ContentType: contentType,
+		ETag:        etag,
 	}
 	if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
 		return "", err
