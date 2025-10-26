@@ -55,13 +55,14 @@ func (s *S3Server) handleUploadPart(w http.ResponseWriter, r *http.Request, buck
 
 	etag, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidUploadID {
+		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidPartNumber {
+		case storage.ErrInvalidPartNumber:
 			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -103,15 +104,16 @@ func (s *S3Server) handleUploadPartCopy(w http.ResponseWriter, r *http.Request, 
 	// Perform copy to part
 	etag, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrObjectNotFound {
+		case storage.ErrObjectNotFound:
 			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidUploadID {
+		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidPartNumber {
+		case storage.ErrInvalidPartNumber:
 			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -144,11 +146,12 @@ func (s *S3Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.
 
 	etag, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidUploadID {
+		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -168,11 +171,12 @@ func (s *S3Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.
 func (s *S3Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	err := s.storage.AbortMultipartUpload(bucket, key, uploadID)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidUploadID {
+		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -265,11 +269,12 @@ func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucke
 	// Fetch one extra part to determine if there are more results
 	parts, err := s.storage.ListParts(bucket, key, uploadID, partNumberMarker, maxParts+1)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrInvalidUploadID {
+		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return

@@ -37,11 +37,12 @@ func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucke
 func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	reader, info, err := s.storage.GetObject(bucket, key)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrObjectNotFound {
+		case storage.ErrObjectNotFound:
 			s.errorResponse(w, r, "NoSuchKey", "Object does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -64,11 +65,12 @@ func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucke
 func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	reader, info, err := s.storage.GetObject(bucket, key)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			w.WriteHeader(http.StatusNotFound)
-		} else if err == storage.ErrObjectNotFound {
+		case storage.ErrObjectNotFound:
 			w.WriteHeader(http.StatusNotFound)
-		} else {
+		default:
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
@@ -122,11 +124,12 @@ func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstB
 	// Perform copy
 	etag, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrObjectNotFound {
+		case storage.ErrObjectNotFound:
 			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -171,11 +174,12 @@ func (s *S3Server) handleRenameObject(w http.ResponseWriter, r *http.Request, bu
 	// Perform rename
 	err := s.storage.RenameObject(bucket, srcKey, dstKey)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else if err == storage.ErrObjectNotFound {
+		case storage.ErrObjectNotFound:
 			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		} else {
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
