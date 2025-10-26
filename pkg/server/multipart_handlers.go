@@ -13,6 +13,13 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
+// urlSafeToStdBase64 converts URL-safe base64 to standard base64
+func urlSafeToStdBase64Multipart(urlSafe string) string {
+	std := strings.ReplaceAll(urlSafe, "-", "+")
+	std = strings.ReplaceAll(std, "_", "/")
+	return std
+}
+
 // handleInitiateMultipartUpload handles InitiateMultipartUpload operation
 func (s *S3Server) handleInitiateMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	contentType := r.Header.Get("Content-Type")
@@ -69,6 +76,7 @@ func (s *S3Server) handleUploadPart(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	w.Header().Set("ETag", fmt.Sprintf("%q", etag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64Multipart(etag))
 	w.WriteHeader(http.StatusOK)
 }
 

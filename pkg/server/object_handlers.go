@@ -11,6 +11,13 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
+// urlSafeToStdBase64 converts URL-safe base64 to standard base64
+func urlSafeToStdBase64(urlSafe string) string {
+	std := strings.ReplaceAll(urlSafe, "-", "+")
+	std = strings.ReplaceAll(std, "_", "/")
+	return std
+}
+
 // handlePutObject handles PutObject operation
 func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	contentType := r.Header.Get("Content-Type")
@@ -29,6 +36,7 @@ func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucke
 	}
 
 	w.Header().Set("ETag", fmt.Sprintf("%q", etag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(etag))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -51,6 +59,7 @@ func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucke
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
 
 	http.ServeContent(w, r, key, info.LastModified, reader)
@@ -74,6 +83,7 @@ func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, buck
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
 	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
 	http.ServeContent(w, r, key, info.LastModified, reader)
 }
