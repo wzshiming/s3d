@@ -256,7 +256,7 @@ func TestCompleteMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	// Upload a part
-	etag, err := store.UploadPart(bucketName, "folder1/subfolder/file.txt", uploadID, 1, bytes.NewReader([]byte("test content")))
+	objInfo, err := store.UploadPart(bucketName, "folder1/subfolder/file.txt", uploadID, 1, bytes.NewReader([]byte("test content")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestCompleteMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	// Complete upload
-	_, err = store.CompleteMultipartUpload(bucketName, "folder1/subfolder/file.txt", uploadID, []Part{{PartNumber: 1, ETag: etag}})
+	_, err = store.CompleteMultipartUpload(bucketName, "folder1/subfolder/file.txt", uploadID, []Part{{PartNumber: 1, ETag: objInfo.ETag}})
 	if err != nil {
 		t.Fatalf("CompleteMultipartUpload failed: %v", err)
 	}
