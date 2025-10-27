@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wzshiming/s3d/pkg/auth"
+	"github.com/wzshiming/s3d/pkg/middleware"
 	"github.com/wzshiming/s3d/pkg/server"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
@@ -43,8 +44,14 @@ func createServer(cfg *Config) (http.Handler, error) {
 		return nil, err
 	}
 	s := server.NewS3Handler(store)
+	
+	// Wrap with path sanitization middleware
+	// This must be the outermost middleware to ensure paths are sanitized
+	// before any other processing
+	handler := middleware.NewPathSanitizer(s)
+	
 	if cfg.Credentials == "" {
-		return s, nil
+		return handler, nil
 	}
 
 	// Create authenticator
@@ -55,8 +62,9 @@ func createServer(cfg *Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	// Create server
-	return authenticator.AuthMiddleware(s), nil
+	// Wrap with auth middleware
+	// Auth middleware comes after path sanitization
+	return authenticator.AuthMiddleware(handler), nil
 }
 
 func main() {
