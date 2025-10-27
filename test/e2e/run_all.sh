@@ -9,6 +9,7 @@ source "${SCRIPT_DIR}/bucket_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
+source "${SCRIPT_DIR}/nonascii_tests.sh"
 
 # Run setup
 setup
