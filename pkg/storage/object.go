@@ -42,7 +42,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Create temp file in the object directory
-	tmpFile, err := os.CreateTemp(objectDir, ".tmp-*")
+	tmpFile, err := s.tempFile()
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +78,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 			return "", err
 		}
 		metadata.Data = fileData
-		
+
 		// Save metadata with inline data
 		if err := s.saveMetadata(metaPath, metadata); err != nil {
 			return "", err
@@ -89,7 +89,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
 			return "", err
 		}
-		
+
 		// Store metadata without inline data
 		if err := s.saveMetadata(metaPath, metadata); err != nil {
 			return "", err
@@ -126,13 +126,13 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	if len(metadata.Data) > 0 {
 		// Data is embedded in metadata
 		reader := &inlineDataReader{bytes.NewReader(metadata.Data)}
-		
+
 		// For inline data, we need to get the last modified time from the meta file
 		metaFileInfo, err := os.Stat(metaPath)
 		if err != nil {
 			return nil, nil, err
 		}
-		
+
 		info := &ObjectInfo{
 			Key:          key,
 			Size:         int64(len(metadata.Data)),
@@ -140,11 +140,11 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 			LastModified: metaFileInfo.ModTime(),
 			ContentType:  metadata.ContentType,
 		}
-		
+
 		if info.ContentType == "" {
 			info.ContentType = "application/octet-stream"
 		}
-		
+
 		return reader, info, nil
 	}
 
@@ -256,10 +256,10 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 
 			// Load metadata
 			metadata, _ := s.loadMetadata(path)
-			
+
 			var size int64
 			var modTime time.Time
-			
+
 			// Check if data is inline or in separate file
 			if metadata != nil && len(metadata.Data) > 0 {
 				// Data is inline
@@ -368,11 +368,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 			Data:        make([]byte, len(srcMetadata.Data)),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
-		
+
 		if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
 			return "", err
 		}
-		
+
 		return srcMetadata.ETag, nil
 	}
 
@@ -390,7 +390,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 
 	// Create temp file for destination
-	tmpFile, err := os.CreateTemp(dstObjectDir, ".tmp-*")
+	tmpFile, err := s.tempFile()
 	if err != nil {
 		return "", err
 	}

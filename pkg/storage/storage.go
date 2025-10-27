@@ -13,6 +13,7 @@ const (
 	dataFile   = "data"
 	metaFile   = "meta"
 	uploadsDir = ".uploads"
+	tempDir    = ".temp"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
 	inlineThreshold = 4096
@@ -61,6 +62,7 @@ type MultipartUpload struct {
 // Storage is the local filesystem storage backend
 type Storage struct {
 	basePath string
+	tempDir  string
 }
 
 // NewStorage creates a new local storage backend
@@ -69,14 +71,22 @@ func NewStorage(basePath string) (*Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(absPath, 0755); err != nil {
+
+	tempDir := filepath.Join(absPath, tempDir)
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return nil, err
 	}
+
 	s := &Storage{
 		basePath: absPath,
+		tempDir:  tempDir,
 	}
 
 	return s, nil
+}
+
+func (s *Storage) tempFile() (*os.File, error) {
+	return os.CreateTemp(s.tempDir, "tmp-*")
 }
 
 // sanitizeBucketName validates and sanitizes bucket name
@@ -91,11 +101,6 @@ func sanitizeBucketName(bucket string) error {
 		return ErrInvalidBucketName
 	}
 	return nil
-}
-
-// sanitizeBucketName validates and sanitizes bucket name (method version)
-func (s *Storage) sanitizeBucketName(bucket string) error {
-	return sanitizeBucketName(bucket)
 }
 
 // sanitizeObjectKey validates and sanitizes object key
@@ -114,15 +119,10 @@ func sanitizeObjectKey(key string) error {
 	return nil
 }
 
-// sanitizeObjectKey validates and sanitizes object key (method version)
-func (s *Storage) sanitizeObjectKey(key string) error {
-	return sanitizeObjectKey(key)
-}
-
 // safePath returns the safe filesystem path for an object
 // Returns the object directory path (not the data file)
 func (s *Storage) safePath(bucket, key string) (string, error) {
-	if err := s.sanitizeBucketName(bucket); err != nil {
+	if err := sanitizeBucketName(bucket); err != nil {
 		return "", err
 	}
 
@@ -132,7 +132,7 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 		return bucketPath, nil
 	}
 
-	if err := s.sanitizeObjectKey(key); err != nil {
+	if err := sanitizeObjectKey(key); err != nil {
 		return "", err
 	}
 
@@ -163,7 +163,7 @@ type Metadata struct {
 	ETag        string
 	// Data stores the file content inline for small files (<=256 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
-	Data        []byte
+	Data []byte
 }
 
 // saveMetadata saves object metadata

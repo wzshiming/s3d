@@ -41,16 +41,21 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 
 	var buckets []BucketInfo
 	for _, entry := range entries {
-		if entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			buckets = append(buckets, BucketInfo{
-				Name:         entry.Name(),
-				CreationDate: info.ModTime(),
-			})
+		if !entry.IsDir() {
+			continue
 		}
+		name := entry.Name()
+		if sanitizeBucketName(name) != nil {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		buckets = append(buckets, BucketInfo{
+			Name:         name,
+			CreationDate: info.ModTime(),
+		})
 	}
 	return buckets, nil
 }

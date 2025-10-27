@@ -69,7 +69,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 
 	// Create temp file
-	tmpFile, err := os.CreateTemp(uploadDir, ".tmp-*")
+	tmpFile, err := s.tempFile()
 	if err != nil {
 		return "", err
 	}
@@ -137,7 +137,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 
 	// Create temp file
-	tmpFile, err := os.CreateTemp(uploadDir, ".tmp-*")
+	tmpFile, err := s.tempFile()
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +209,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Create temp file for final object
-	tmpFile, err := os.CreateTemp(objectDir, ".tmp-*")
+	tmpFile, err := s.tempFile()
 	if err != nil {
 		return "", err
 	}
