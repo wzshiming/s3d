@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -94,6 +95,47 @@ func (s *S3Server) handleDeleteObject(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteObjects handles DeleteObjects operation (batch delete)
+func (s *S3Server) handleDeleteObjects(w http.ResponseWriter, r *http.Request, bucket string) {
+	// Check if bucket exists
+	if !s.storage.BucketExists(bucket) {
+		s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		return
+	}
+
+	// Parse the request body
+	var deleteReq s3types.Delete
+	if err := xml.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
+		s.errorResponse(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		return
+	}
+
+	// Process deletions
+	result := s3types.DeleteObjectsResult{}
+
+	for _, obj := range deleteReq.Objects {
+		err := s.storage.DeleteObject(bucket, obj.Key)
+		
+		if err != nil && err != storage.ErrObjectNotFound {
+			// Add to errors list
+			result.Errors = append(result.Errors, s3types.DeleteError{
+				Key:     obj.Key,
+				Code:    "InternalError",
+				Message: err.Error(),
+			})
+		} else {
+			// Successfully deleted (or object didn't exist, which is also considered success in S3)
+			if !deleteReq.Quiet {
+				result.Deleted = append(result.Deleted, s3types.DeletedObject{
+					Key: obj.Key,
+				})
+			}
+		}
+	}
+
+	s.xmlResponse(w, result, http.StatusOK)
 }
 
 // handleCopyObject handles CopyObject operation

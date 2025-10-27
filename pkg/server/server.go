@@ -96,6 +96,13 @@ func (s *S3Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.handleCreateBucket(w, r, bucket)
 		case http.MethodGet:
 			s.handleListObjects(w, r, bucket)
+		case http.MethodPost:
+			// Check for delete query parameter (DeleteObjects operation)
+			if query.Has("delete") {
+				s.handleDeleteObjects(w, r, bucket)
+			} else {
+				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+			}
 		case http.MethodDelete:
 			s.handleDeleteBucket(w, r, bucket)
 		case http.MethodHead:

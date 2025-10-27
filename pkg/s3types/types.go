@@ -161,3 +161,38 @@ type Error struct {
 	Code    string   `xml:"Code"`
 	Message string   `xml:"Message"`
 }
+
+// ObjectIdentifier represents an object to delete in DeleteObjects request
+type ObjectIdentifier struct {
+	Key       string `xml:"Key"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// Delete represents the delete request in DeleteObjects operation
+type Delete struct {
+	Objects []ObjectIdentifier `xml:"Object"`
+	Quiet   bool               `xml:"Quiet,omitempty"`
+}
+
+// DeletedObject represents a successfully deleted object in DeleteObjects response
+type DeletedObject struct {
+	Key                   string `xml:"Key"`
+	VersionId             string `xml:"VersionId,omitempty"`
+	DeleteMarker          bool   `xml:"DeleteMarker,omitempty"`
+	DeleteMarkerVersionId string `xml:"DeleteMarkerVersionId,omitempty"`
+}
+
+// DeleteError represents an error deleting an object in DeleteObjects response
+type DeleteError struct {
+	Key       string `xml:"Key"`
+	Code      string `xml:"Code"`
+	Message   string `xml:"Message"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// DeleteObjectsResult is the response for DeleteObjects operation
+type DeleteObjectsResult struct {
+	XMLName xml.Name        `xml:"DeleteResult"`
+	Deleted []DeletedObject `xml:"Deleted,omitempty"`
+	Errors  []DeleteError   `xml:"Error,omitempty"`
+}

@@ -26,6 +26,7 @@ test_list_with_prefix
 test_copy_object
 test_rename_object
 test_delete_object
+test_delete_objects
 
 # Run advanced tests
 test_multipart_upload
