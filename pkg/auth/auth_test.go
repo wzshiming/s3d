@@ -271,6 +271,8 @@ func TestCanonicalURI(t *testing.T) {
 		{"Path with tilde", "/bucket/~file", "/bucket/~file"},
 		{"Path with hyphen and underscore", "/bucket/my-file_name", "/bucket/my-file_name"},
 		{"Path with ampersand", "/bucket/file&name", "/bucket/file%26name"},
+		{"Path with UTF-8", "/bucket/文件.txt", "/bucket/%E6%96%87%E4%BB%B6.txt"},
+		{"Path with emoji", "/bucket/file😀.txt", "/bucket/file%F0%9F%98%80.txt"},
 	}
 
 	for _, tt := range tests {

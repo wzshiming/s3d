@@ -181,13 +181,20 @@ func (a *AWS4Authenticator) canonicalURI(path string) string {
 // Only unreserved characters (A-Z, a-z, 0-9, '-', '_', '.', '~') are not encoded
 func uriEncode(s string) string {
 	var result strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-			c == '-' || c == '_' || c == '.' || c == '~' {
-			result.WriteByte(c)
+	// Iterate over runes to properly handle multi-byte UTF-8 characters
+	for _, r := range s {
+		// Check if character is unreserved (safe to keep unencoded)
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' || r == '~' {
+			result.WriteRune(r)
+		} else if r < 128 {
+			// For ASCII characters, encode as single byte
+			result.WriteString(fmt.Sprintf("%%%02X", r))
 		} else {
-			result.WriteString(fmt.Sprintf("%%%02X", c))
+			// For non-ASCII (multi-byte UTF-8), encode each byte
+			for _, b := range []byte(string(r)) {
+				result.WriteString(fmt.Sprintf("%%%02X", b))
+			}
 		}
 	}
 	return result.String()
