@@ -54,9 +54,9 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
-	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", info.ModTime.UTC().Format(http.TimeFormat))
 
-	http.ServeContent(w, r, key, info.LastModified, reader)
+	http.ServeContent(w, r, key, info.ModTime, reader)
 }
 
 // handleHeadObject handles HeadObject operation
@@ -78,8 +78,8 @@ func (s *S3Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, buc
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
-	w.Header().Set("Last-Modified", info.LastModified.UTC().Format(http.TimeFormat))
-	http.ServeContent(w, r, key, info.LastModified, reader)
+	w.Header().Set("Last-Modified", info.ModTime.UTC().Format(http.TimeFormat))
+	http.ServeContent(w, r, key, info.ModTime, reader)
 }
 
 // handleDeleteObject handles DeleteObject operation
@@ -288,7 +288,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	for _, obj := range objects {
 		result.Contents = append(result.Contents, s3types.Contents{
 			Key:          obj.Key,
-			LastModified: obj.LastModified,
+			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
 			StorageClass: "STANDARD",
@@ -367,7 +367,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	for _, obj := range objects {
 		result.Contents = append(result.Contents, s3types.Contents{
 			Key:          obj.Key,
-			LastModified: obj.LastModified,
+			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
 			StorageClass: "STANDARD",

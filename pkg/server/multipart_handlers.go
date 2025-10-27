@@ -243,7 +243,7 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 		result.Uploads = append(result.Uploads, s3types.Upload{
 			Key:          upload.Key,
 			UploadId:     upload.UploadID,
-			Initiated:    upload.Created,
+			Initiated:    upload.ModTime,
 			StorageClass: "STANDARD",
 		})
 	}
@@ -313,7 +313,7 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 	for _, part := range parts {
 		result.Parts = append(result.Parts, s3types.CompletedPart{
 			PartNumber:   part.PartNumber,
-			LastModified: time.Now(),
+			LastModified: part.ModTime,
 			ETag:         fmt.Sprintf("%q", part.ETag),
 			Size:         part.Size,
 		})

@@ -53,8 +53,8 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 			continue
 		}
 		buckets = append(buckets, BucketInfo{
-			Name:         name,
-			CreationDate: info.ModTime(),
+			Name:    name,
+			ModTime: info.ModTime(),
 		})
 	}
 	return buckets, nil

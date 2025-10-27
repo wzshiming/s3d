@@ -25,7 +25,7 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 	for _, b := range buckets {
 		result.Buckets.Bucket = append(result.Buckets.Bucket, s3types.Bucket{
 			Name:         b.Name,
-			CreationDate: b.CreationDate,
+			CreationDate: b.ModTime,
 		})
 	}
 

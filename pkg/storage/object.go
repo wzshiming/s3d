@@ -158,11 +158,11 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		}
 
 		info := &ObjectInfo{
-			Key:          key,
-			Size:         int64(len(metadata.Data)),
-			ETag:         metadata.ETag,
-			LastModified: metaFileInfo.ModTime(),
-			ContentType:  metadata.ContentType,
+			Key:         key,
+			Size:        int64(len(metadata.Data)),
+			ETag:        metadata.ETag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: metadata.ContentType,
 		}
 
 		if info.ContentType == "" {
@@ -189,11 +189,11 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	}
 
 	info := &ObjectInfo{
-		Key:          key,
-		Size:         fileInfo.Size(),
-		ETag:         metadata.ETag,
-		LastModified: fileInfo.ModTime(),
-		ContentType:  metadata.ContentType,
+		Key:         key,
+		Size:        fileInfo.Size(),
+		ETag:        metadata.ETag,
+		ModTime:     fileInfo.ModTime(),
+		ContentType: metadata.ContentType,
 	}
 
 	if info.ContentType == "" {
@@ -315,11 +315,11 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			}
 
 			objects = append(objects, ObjectInfo{
-				Key:          objectKey,
-				Size:         size,
-				ETag:         metadata.ETag,
-				LastModified: modTime,
-				ContentType:  metadata.ContentType,
+				Key:         objectKey,
+				Size:        size,
+				ETag:        metadata.ETag,
+				ModTime:     modTime,
+				ContentType: metadata.ContentType,
 			})
 		}
 

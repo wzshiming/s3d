@@ -31,17 +31,17 @@ var (
 
 // ObjectInfo contains metadata about an object
 type ObjectInfo struct {
-	Key          string
-	Size         int64
-	ETag         string
-	LastModified time.Time
-	ContentType  string
+	Key         string
+	Size        int64
+	ETag        string
+	ModTime     time.Time
+	ContentType string
 }
 
 // BucketInfo contains metadata about a bucket
 type BucketInfo struct {
-	Name         string
-	CreationDate time.Time
+	Name    string
+	ModTime time.Time
 }
 
 // Part represents a part of a multipart upload
@@ -49,6 +49,7 @@ type Part struct {
 	PartNumber int
 	ETag       string
 	Size       int64
+	ModTime    time.Time
 }
 
 // MultipartUpload represents an in-progress multipart upload
@@ -56,7 +57,7 @@ type MultipartUpload struct {
 	UploadID string
 	Bucket   string
 	Key      string
-	Created  time.Time
+	ModTime  time.Time
 }
 
 // Storage is the local filesystem storage backend

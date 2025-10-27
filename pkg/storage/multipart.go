@@ -366,7 +366,7 @@ func (s *Storage) ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker
 			UploadID: uploadID,
 			Bucket:   bucket,
 			Key:      key,
-			Created:  info.ModTime(),
+			ModTime:  info.ModTime(),
 		}
 
 		uploads = append(uploads, upload)
@@ -438,6 +438,7 @@ func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker, maxP
 			PartNumber: partNumber,
 			ETag:       etag,
 			Size:       info.Size(),
+			ModTime:    info.ModTime(),
 		}
 
 		parts = append(parts, part)
