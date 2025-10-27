@@ -645,3 +645,310 @@ func TestInlineDataThreshold(t *testing.T) {
 		t.Error("File above threshold (4097 bytes) should have separate data file")
 	}
 }
+
+// TestPutObjectDuplicateCompatibility tests putting the same object multiple times
+func TestPutObjectDuplicateCompatibility(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 1: Put same object twice (same content)
+	t.Run("SameContentTwice", func(t *testing.T) {
+		objectKey := "duplicate-same.txt"
+		content := bytes.Repeat([]byte("test"), 100)
+
+		// First put
+		etag1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("First PutObject failed: %v", err)
+		}
+
+		// Second put with same content - should be compatible
+		etag2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("Second PutObject with same content failed: %v", err)
+		}
+
+		// ETags should be the same
+		if etag1 != etag2 {
+			t.Errorf("Expected same ETag for same content, got %s and %s", etag1, etag2)
+		}
+
+		// Verify object still exists and has correct content
+		reader, info, err := store.GetObject(bucketName, objectKey)
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer reader.Close()
+
+		data, _ := io.ReadAll(reader)
+		if !bytes.Equal(data, content) {
+			t.Error("Content doesn't match original")
+		}
+		if info.ETag != etag1 {
+			t.Error("ETag doesn't match")
+		}
+	})
+
+	// Test 2: Put object with different content (overwrite)
+	t.Run("DifferentContentOverwrite", func(t *testing.T) {
+		objectKey := "duplicate-different.txt"
+		content1 := []byte("first content")
+		content2 := []byte("second content different")
+
+		// First put
+		etag1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content1), "text/plain")
+		if err != nil {
+			t.Fatalf("First PutObject failed: %v", err)
+		}
+
+		// Second put with different content - should overwrite
+		etag2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content2), "text/plain")
+		if err != nil {
+			t.Fatalf("Second PutObject with different content failed: %v", err)
+		}
+
+		// ETags should be different
+		if etag1 == etag2 {
+			t.Errorf("Expected different ETags for different content")
+		}
+
+		// Verify object has new content
+		reader, info, err := store.GetObject(bucketName, objectKey)
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer reader.Close()
+
+		data, _ := io.ReadAll(reader)
+		if !bytes.Equal(data, content2) {
+			t.Error("Content should be updated to second version")
+		}
+		if info.ETag != etag2 {
+			t.Error("ETag should be from second version")
+		}
+	})
+}
+
+// TestCopyObjectDuplicateCompatibility tests copying to an existing destination
+func TestCopyObjectDuplicateCompatibility(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 1: Copy to existing destination with same content
+	t.Run("SameContentAtDestination", func(t *testing.T) {
+		srcKey := "source1.txt"
+		dstKey := "dest1.txt"
+		content := []byte("shared content")
+
+		// Create source
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject source failed: %v", err)
+		}
+
+		// Create destination with same content
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject destination failed: %v", err)
+		}
+
+		// Copy - should detect same content and be compatible
+		etag, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("CopyObject to existing destination with same content failed: %v", err)
+		}
+
+		if etag == "" {
+			t.Error("ETag should not be empty")
+		}
+
+		// Verify destination still exists with correct content
+		reader, _, err := store.GetObject(bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer reader.Close()
+
+		data, _ := io.ReadAll(reader)
+		if !bytes.Equal(data, content) {
+			t.Error("Destination content should remain unchanged")
+		}
+	})
+
+	// Test 2: Copy to existing destination with different content (overwrite)
+	t.Run("DifferentContentAtDestination", func(t *testing.T) {
+		srcKey := "source2.txt"
+		dstKey := "dest2.txt"
+		srcContent := []byte("source content")
+		dstContent := []byte("destination content different")
+
+		// Create source
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject source failed: %v", err)
+		}
+
+		// Create destination with different content
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject destination failed: %v", err)
+		}
+
+		// Copy - should overwrite destination
+		etag, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("CopyObject failed: %v", err)
+		}
+
+		if etag == "" {
+			t.Error("ETag should not be empty")
+		}
+
+		// Verify destination has source content now
+		reader, _, err := store.GetObject(bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer reader.Close()
+
+		data, _ := io.ReadAll(reader)
+		if !bytes.Equal(data, srcContent) {
+			t.Error("Destination should have source content after copy")
+		}
+	})
+}
+
+// TestRenameObjectDuplicateCompatibility tests renaming to an existing destination
+func TestRenameObjectDuplicateCompatibility(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 1: Rename to existing destination with same content (compatible)
+	t.Run("SameContentAtDestination", func(t *testing.T) {
+		srcKey := "rename-src1.txt"
+		dstKey := "rename-dst1.txt"
+		content := []byte("same content")
+
+		// Create source
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject source failed: %v", err)
+		}
+
+		// Create destination with same content
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject destination failed: %v", err)
+		}
+
+		// Rename - should succeed because content is the same (compatible)
+		err = store.RenameObject(bucketName, srcKey, dstKey)
+		if err != nil {
+			t.Fatalf("RenameObject with same content at destination failed: %v", err)
+		}
+
+		// Source should be deleted
+		_, _, err = store.GetObject(bucketName, srcKey)
+		if err != ErrObjectNotFound {
+			t.Error("Source should be deleted after rename")
+		}
+
+		// Destination should still exist
+		reader, _, err := store.GetObject(bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("GetObject destination failed: %v", err)
+		}
+		defer reader.Close()
+
+		data, _ := io.ReadAll(reader)
+		if !bytes.Equal(data, content) {
+			t.Error("Destination should have correct content")
+		}
+	})
+
+	// Test 2: Rename to existing destination with different content (should overwrite)
+	t.Run("DifferentContentAtDestination", func(t *testing.T) {
+		srcKey := "rename-src2.txt"
+		dstKey := "rename-dst2.txt"
+		srcContent := []byte("source content")
+		dstContent := []byte("destination content different")
+
+		// Create source
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject source failed: %v", err)
+		}
+
+		// Create destination with different content
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), "text/plain")
+		if err != nil {
+			t.Fatalf("PutObject destination failed: %v", err)
+		}
+
+		// Rename - should succeed and overwrite destination
+		err = store.RenameObject(bucketName, srcKey, dstKey)
+		if err != nil {
+			t.Fatalf("RenameObject failed: %v", err)
+		}
+
+		// Source should be deleted (rename succeeded)
+		_, _, err = store.GetObject(bucketName, srcKey)
+		if err != ErrObjectNotFound {
+			t.Error("Source should be deleted after rename")
+		}
+
+		// Destination should now have source content (overwritten)
+		reader, _, err := store.GetObject(bucketName, dstKey)
+		if err != nil {
+			t.Fatalf("GetObject destination failed: %v", err)
+		}
+		defer reader.Close()
+
+		dstData, _ := io.ReadAll(reader)
+		if !bytes.Equal(dstData, srcContent) {
+			t.Error("Destination should have source content after rename (overwrite)")
+		}
+	})
+}

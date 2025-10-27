@@ -450,3 +450,340 @@ func TestDeleteObjects(t *testing.T) {
 		}
 	})
 }
+
+// TestDuplicateWriteCompatibility tests duplicate write scenarios
+func TestDuplicateWriteCompatibility(t *testing.T) {
+	bucketName := "test-duplicate-writes"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ts.ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	// Test 1: PutObject with same content twice
+	t.Run("PutObjectDuplicateSameContent", func(t *testing.T) {
+		key := "duplicate-same.txt"
+		content := "Same content for duplicate test"
+
+		// First put
+		resp1, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("First PutObject failed: %v", err)
+		}
+
+		// Second put with same content - should succeed
+		resp2, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("Second PutObject with same content failed: %v", err)
+		}
+
+		// ETags should be the same since content is identical
+		if *resp1.ETag != *resp2.ETag {
+			t.Errorf("Expected same ETag for identical content, got %s and %s", *resp1.ETag, *resp2.ETag)
+		}
+
+		// Verify object exists and has correct content
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, _ := io.ReadAll(output.Body)
+		if string(data) != content {
+			t.Errorf("Content mismatch: got %q, want %q", string(data), content)
+		}
+	})
+
+	// Test 2: PutObject with different content (overwrite)
+	t.Run("PutObjectDuplicateDifferentContent", func(t *testing.T) {
+		key := "duplicate-different.txt"
+		content1 := "First content"
+		content2 := "Second different content"
+
+		// First put
+		resp1, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader(content1),
+		})
+		if err != nil {
+			t.Fatalf("First PutObject failed: %v", err)
+		}
+
+		// Second put with different content - should overwrite
+		resp2, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader(content2),
+		})
+		if err != nil {
+			t.Fatalf("Second PutObject with different content failed: %v", err)
+		}
+
+		// ETags should be different since content changed
+		if *resp1.ETag == *resp2.ETag {
+			t.Errorf("Expected different ETags for different content")
+		}
+
+		// Verify object has new content
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, _ := io.ReadAll(output.Body)
+		if string(data) != content2 {
+			t.Errorf("Content mismatch: got %q, want %q", string(data), content2)
+		}
+	})
+
+	// Test 3: CopyObject to existing destination with same content
+	t.Run("CopyObjectToExistingSameContent", func(t *testing.T) {
+		srcKey := "copy-src-same.txt"
+		dstKey := "copy-dst-same.txt"
+		content := "Shared content for copy test"
+
+		// Create source
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create source object: %v", err)
+		}
+
+		// Create destination with same content
+		_, err = ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create destination object: %v", err)
+		}
+
+		// Copy - should succeed even though destination exists
+		_, err = ts.client.CopyObject(ts.ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(dstKey),
+			CopySource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcKey)),
+		})
+		if err != nil {
+			t.Fatalf("CopyObject to existing destination with same content failed: %v", err)
+		}
+
+		// Verify destination still has correct content
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, _ := io.ReadAll(output.Body)
+		if string(data) != content {
+			t.Errorf("Content mismatch: got %q, want %q", string(data), content)
+		}
+	})
+
+	// Test 4: CopyObject to existing destination with different content
+	t.Run("CopyObjectToExistingDifferentContent", func(t *testing.T) {
+		srcKey := "copy-src-diff.txt"
+		dstKey := "copy-dst-diff.txt"
+		srcContent := "Source content"
+		dstContent := "Original destination content"
+
+		// Create source
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+			Body:   strings.NewReader(srcContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create source object: %v", err)
+		}
+
+		// Create destination with different content
+		_, err = ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+			Body:   strings.NewReader(dstContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create destination object: %v", err)
+		}
+
+		// Copy - should overwrite destination
+		_, err = ts.client.CopyObject(ts.ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(dstKey),
+			CopySource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcKey)),
+		})
+		if err != nil {
+			t.Fatalf("CopyObject failed: %v", err)
+		}
+
+		// Verify destination has source content now
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, _ := io.ReadAll(output.Body)
+		if string(data) != srcContent {
+			t.Errorf("Content mismatch: got %q, want %q (expected source content)", string(data), srcContent)
+		}
+	})
+
+	// Test 5: RenameObject to existing destination with same content
+	t.Run("RenameObjectToExistingSameContent", func(t *testing.T) {
+		srcKey := "rename-src-same.txt"
+		dstKey := "rename-dst-same.txt"
+		content := "Same content for rename test"
+
+		// Create source
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create source object: %v", err)
+		}
+
+		// Create destination with same content
+		_, err = ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+			Body:   strings.NewReader(content),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create destination object: %v", err)
+		}
+
+		// Rename - should succeed because content is the same (compatible)
+		_, err = ts.client.RenameObject(ts.ctx, &s3.RenameObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(dstKey),
+			RenameSource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcKey)),
+		})
+		if err != nil {
+			t.Fatalf("RenameObject with same content at destination failed: %v", err)
+		}
+
+		// Source should be deleted
+		_, err = ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+		})
+		if err == nil {
+			t.Errorf("Source should be deleted after rename")
+		}
+
+		// Destination should still exist with correct content
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject for destination failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		data, _ := io.ReadAll(output.Body)
+		if string(data) != content {
+			t.Errorf("Content mismatch: got %q, want %q", string(data), content)
+		}
+	})
+
+	// Test 6: RenameObject to existing destination with different content (should overwrite)
+	t.Run("RenameObjectToExistingDifferentContent", func(t *testing.T) {
+		srcKey := "rename-src-diff.txt"
+		dstKey := "rename-dst-diff.txt"
+		srcContent := "Source content for rename"
+		dstContent := "Different destination content"
+
+		// Create source
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+			Body:   strings.NewReader(srcContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create source object: %v", err)
+		}
+
+		// Create destination with different content
+		_, err = ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+			Body:   strings.NewReader(dstContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create destination object: %v", err)
+		}
+
+		// Rename - should succeed and overwrite destination
+		_, err = ts.client.RenameObject(ts.ctx, &s3.RenameObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(dstKey),
+			RenameSource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcKey)),
+		})
+		if err != nil {
+			t.Fatalf("RenameObject failed: %v", err)
+		}
+
+		// Source should be deleted (rename succeeded)
+		_, err = ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcKey),
+		})
+		if err == nil {
+			t.Errorf("Source should be deleted after rename")
+		}
+
+		// Destination should now have source content (overwritten)
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject for destination failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		dstData, _ := io.ReadAll(output.Body)
+		if string(dstData) != srcContent {
+			t.Errorf("Destination content should be source content: got %q, want %q", string(dstData), srcContent)
+		}
+	})
+}
