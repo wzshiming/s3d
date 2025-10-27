@@ -98,7 +98,7 @@ func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, b
 }
 
 // handleDeleteObjects handles DeleteObjects operation (batch delete)
-func (s *S3Server) handleDeleteObjects(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	// Check if bucket exists
 	if !s.storage.BucketExists(bucket) {
 		s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -117,7 +117,7 @@ func (s *S3Server) handleDeleteObjects(w http.ResponseWriter, r *http.Request, b
 
 	for _, obj := range deleteReq.Objects {
 		err := s.storage.DeleteObject(bucket, obj.Key)
-		
+
 		if err != nil && err != storage.ErrObjectNotFound {
 			// Add to errors list
 			result.Errors = append(result.Errors, s3types.DeleteError{
