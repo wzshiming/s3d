@@ -251,3 +251,56 @@ func containsMiddle(s, substr string) bool {
 	}
 	return false
 }
+
+func TestCanonicalURI(t *testing.T) {
+	auth := NewAWS4Authenticator()
+
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{"Empty path", "", "/"},
+		{"Simple path", "/bucket/object", "/bucket/object"},
+		{"Path with spaces", "/bucket/my object", "/bucket/my%20object"},
+		{"Path with plus", "/bucket/object+name", "/bucket/object%2Bname"},
+		{"Path with percent", "/bucket/object%20name", "/bucket/object%2520name"},
+		{"Path with special chars", "/bucket/file (1).txt", "/bucket/file%20%281%29.txt"},
+		{"Path with multiple segments", "/bucket/path/to/object", "/bucket/path/to/object"},
+		{"Root path", "/", "/"},
+		{"Path with tilde", "/bucket/~file", "/bucket/~file"},
+		{"Path with hyphen and underscore", "/bucket/my-file_name", "/bucket/my-file_name"},
+		{"Path with ampersand", "/bucket/file&name", "/bucket/file%26name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := auth.canonicalURI(tt.path)
+			if result != tt.expected {
+				t.Errorf("canonicalURI(%q) = %q, want %q", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAuthenticateWithSpecialChars(t *testing.T) {
+	auth := NewAWS4Authenticator()
+	auth.AddCredentials("test-key", "test-secret")
+
+	// Test that canonical URI encoding is used in signature calculation
+	// When client sends /bucket/object%20with%20spaces, the server receives it decoded as "object with spaces"
+	// The canonical request should re-encode it
+	req := httptest.NewRequest("GET", "/bucket/object%20with%20spaces", nil)
+	req.Host = "example.amazonaws.com"
+	req.Header.Set("X-Amz-Date", "20230101T000000Z")
+	req.Header.Set("X-Amz-Content-Sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+	// Create canonical request to verify URI encoding
+	canonical := auth.createCanonicalRequest(req, "host;x-amz-content-sha256;x-amz-date")
+
+	// The canonical request should contain the encoded path
+	// The decoded path "object with spaces" should be re-encoded to "object%20with%20spaces"
+	if !contains(canonical, "/bucket/object%20with%20spaces") {
+		t.Errorf("Canonical request should contain encoded path, got:\n%s", canonical)
+	}
+}

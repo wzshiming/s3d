@@ -156,16 +156,51 @@ func (a *AWS4Authenticator) calculateSignatureV4(r *http.Request, secretAccessKe
 	return hex.EncodeToString(signature), nil
 }
 
+// canonicalURI encodes the URI path according to AWS Signature V4 specification
+// Each path segment is URI-encoded, but the forward slashes are preserved
+func (a *AWS4Authenticator) canonicalURI(path string) string {
+	if path == "" {
+		return "/"
+	}
+
+	// Split path into segments and encode each one
+	segments := strings.Split(path, "/")
+	var encoded []string
+	for _, segment := range segments {
+		if segment == "" {
+			encoded = append(encoded, "")
+		} else {
+			// URI-encode each segment according to RFC 3986 for AWS SigV4
+			encoded = append(encoded, uriEncode(segment))
+		}
+	}
+	return strings.Join(encoded, "/")
+}
+
+// uriEncode performs URI encoding according to RFC 3986 for AWS Signature V4
+// Only unreserved characters (A-Z, a-z, 0-9, '-', '_', '.', '~') are not encoded
+func uriEncode(s string) string {
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~' {
+			result.WriteByte(c)
+		} else {
+			result.WriteString(fmt.Sprintf("%%%02X", c))
+		}
+	}
+	return result.String()
+}
+
 // createCanonicalRequest creates a canonical request for AWS Signature V4
 func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeaders string) string {
 	// Method
 	method := r.Method
 
-	// URI
-	uri := r.URL.Path
-	if uri == "" {
-		uri = "/"
-	}
+	// URI - use EscapedPath to get the properly encoded path, then encode each segment
+	// Note: r.URL.Path contains the decoded path, so we need to re-encode it
+	uri := a.canonicalURI(r.URL.Path)
 
 	// Query string
 	queryString := r.URL.Query()

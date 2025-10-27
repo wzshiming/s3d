@@ -498,3 +498,133 @@ func TestMultipleCredentials(t *testing.T) {
 		})
 	}
 }
+
+// TestAuthenticatedObjectWithSpecialChars tests authentication with special characters in object keys
+func TestAuthenticatedObjectWithSpecialChars(t *testing.T) {
+	// Setup test server with authentication
+	tmpDir, err := os.MkdirTemp("", "s3d-auth-special-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := storage.NewStorage(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	authenticator := auth.NewAWS4Authenticator()
+	authenticator.AddCredentials("test-key", "test-secret")
+
+	s3Handler := server.NewS3Handler(store)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
+
+	go srv.Serve(listener)
+	defer srv.Shutdown(context.Background())
+
+	time.Sleep(100 * time.Millisecond)
+
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			"test-key",
+			"test-secret",
+			"",
+		)),
+		config.WithEndpointResolver(aws.EndpointResolverFunc(
+			func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:               "http://" + addr,
+					SigningRegion:     "us-east-1",
+					HostnameImmutable: true,
+				}, nil
+			}),
+		),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+
+	bucketName := "test-special-chars-bucket"
+
+	// Create bucket
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	// Test object keys with special characters
+	testCases := []struct {
+		name      string
+		objectKey string
+	}{
+		{"Simple key", "simple-object.txt"},
+		{"With spaces", "object with spaces.txt"},
+		{"With plus", "object+with+plus.txt"},
+		{"With percent encoding", "object%20encoded.txt"},
+		{"With parentheses", "file (1).txt"},
+		{"With ampersand", "file&name.txt"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "Test content for " + tc.objectKey
+
+			// Put object
+			_, err := client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String(tc.objectKey),
+				Body:   strings.NewReader(content),
+			})
+			if err != nil {
+				t.Fatalf("Failed to put object with key %q: %v", tc.objectKey, err)
+			}
+
+			// Get object
+			output, err := client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String(tc.objectKey),
+			})
+			if err != nil {
+				t.Fatalf("Failed to get object with key %q: %v", tc.objectKey, err)
+			}
+			defer output.Body.Close()
+
+			data, err := io.ReadAll(output.Body)
+			if err != nil {
+				t.Fatalf("Failed to read object body: %v", err)
+			}
+
+			if string(data) != content {
+				t.Fatalf("Expected content %q, got %q", content, string(data))
+			}
+
+			// Delete object
+			_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String(tc.objectKey),
+			})
+			if err != nil {
+				t.Fatalf("Failed to delete object with key %q: %v", tc.objectKey, err)
+			}
+		})
+	}
+}
