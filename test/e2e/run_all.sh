@@ -38,6 +38,9 @@ test_copy_to_existing_different_content
 test_rename_to_existing_same_content
 test_rename_to_existing_different_content
 
+# Run non-ASCII object key tests
+test_nonascii_object_keys
+
 # Run advanced tests
 test_multipart_upload
 test_sync_directory
