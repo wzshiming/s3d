@@ -15,15 +15,12 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
-var tsV1 *testServerV1
-
 // testServerV1 holds the components needed for integration testing with AWS SDK v1
 type testServerV1 struct {
 	tmpDir   string
 	listener net.Listener
 	srv      *http.Server
 	client   *s3.S3
-	ctx      context.Context
 }
 
 // setupTestServerV1 creates and starts a test server for AWS SDK v1
@@ -74,7 +71,6 @@ func setupTestServerV1(t *testing.T) *testServerV1 {
 		listener: listener,
 		srv:      srv,
 		client:   client,
-		ctx:      context.Background(),
 	}
 }
 
