@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
@@ -8,7 +9,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
+
+// inlineDataReader wraps a bytes.Reader to implement io.ReadSeekCloser
+type inlineDataReader struct {
+	*bytes.Reader
+}
+
+// Close implements io.Closer (no-op for in-memory data)
+func (r *inlineDataReader) Close() error {
+	return nil
+}
 
 // PutObject stores an object
 func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType string) (string, error) {
@@ -46,19 +58,42 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 	tmpFile.Close()
 
-	// Move temp file to data file
-	if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
+	// Check file size to determine if it should be inlined
+	fileInfo, err := os.Stat(tmpFile.Name())
+	if err != nil {
 		return "", err
 	}
 
-	// Store metadata - use URL-safe base64 encoded SHA256
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 	metadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
 	}
-	if err := s.saveMetadata(metaPath, metadata); err != nil {
-		return "", err
+
+	// If file is small enough, embed it in metadata
+	if fileInfo.Size() <= inlineThreshold {
+		// Read the file content
+		fileData, err := os.ReadFile(tmpFile.Name())
+		if err != nil {
+			return "", err
+		}
+		metadata.Data = fileData
+		
+		// Save metadata with inline data
+		if err := s.saveMetadata(metaPath, metadata); err != nil {
+			return "", err
+		}
+		// No need to create a separate data file
+	} else {
+		// Move temp file to data file for larger files
+		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
+			return "", err
+		}
+		
+		// Store metadata without inline data
+		if err := s.saveMetadata(metaPath, metadata); err != nil {
+			return "", err
+		}
 	}
 
 	return etag, nil
@@ -78,7 +113,42 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	dataPath := filepath.Join(objectDir, dataFile)
 	metaPath := filepath.Join(objectDir, metaFile)
 
-	// Check if object exists
+	// Load metadata first
+	metadata, err := s.loadMetadata(metaPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if metadata == nil {
+		return nil, nil, ErrObjectNotFound
+	}
+
+	// Check if data is stored inline in metadata
+	if len(metadata.Data) > 0 {
+		// Data is embedded in metadata
+		reader := &inlineDataReader{bytes.NewReader(metadata.Data)}
+		
+		// For inline data, we need to get the last modified time from the meta file
+		metaFileInfo, err := os.Stat(metaPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		
+		info := &ObjectInfo{
+			Key:          key,
+			Size:         int64(len(metadata.Data)),
+			ETag:         metadata.ETag,
+			LastModified: metaFileInfo.ModTime(),
+			ContentType:  metadata.ContentType,
+		}
+		
+		if info.ContentType == "" {
+			info.ContentType = "application/octet-stream"
+		}
+		
+		return reader, info, nil
+	}
+
+	// Data is in separate file
 	file, err := os.Open(dataPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -89,13 +159,6 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 
 	// Get file info
 	fileInfo, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, nil, err
-	}
-
-	// Load metadata
-	metadata, err := s.loadMetadata(metaPath)
 	if err != nil {
 		file.Close()
 		return nil, nil, err
@@ -127,8 +190,9 @@ func (s *Storage) DeleteObject(bucket, key string) error {
 		return err
 	}
 
-	// Check if object exists
-	if _, err := os.Stat(filepath.Join(objectDir, dataFile)); os.IsNotExist(err) {
+	// Check if object exists by checking for meta file (which always exists)
+	metaPath := filepath.Join(objectDir, metaFile)
+	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
 		return ErrObjectNotFound
 	}
 
@@ -160,8 +224,8 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			return nil
 		}
 
-		// Check if this is a data file
-		if filepath.Base(path) == dataFile && !info.IsDir() {
+		// Check if this is a meta file (all objects have meta files)
+		if filepath.Base(path) == metaFile && !info.IsDir() {
 			objectDir := filepath.Dir(path)
 			objectKey, err := filepath.Rel(bucketPath, objectDir)
 			if err != nil {
@@ -191,14 +255,32 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			}
 
 			// Load metadata
-			metaPath := filepath.Join(objectDir, metaFile)
-			metadata, _ := s.loadMetadata(metaPath)
+			metadata, _ := s.loadMetadata(path)
+			
+			var size int64
+			var modTime time.Time
+			
+			// Check if data is inline or in separate file
+			if metadata != nil && len(metadata.Data) > 0 {
+				// Data is inline
+				size = int64(len(metadata.Data))
+				modTime = info.ModTime()
+			} else {
+				// Data is in separate file
+				dataPath := filepath.Join(objectDir, dataFile)
+				dataInfo, err := os.Stat(dataPath)
+				if err != nil {
+					return nil // Skip if data file doesn't exist
+				}
+				size = dataInfo.Size()
+				modTime = dataInfo.ModTime()
+			}
 
 			objects = append(objects, ObjectInfo{
 				Key:          objectKey,
-				Size:         info.Size(),
+				Size:         size,
 				ETag:         metadata.ETag,
-				LastModified: info.ModTime(),
+				LastModified: modTime,
 				ContentType:  metadata.ContentType,
 			})
 		}
@@ -248,21 +330,16 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		return "", err
 	}
 
-	srcDataPath := filepath.Join(srcObjectDir, dataFile)
 	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
 
-	// Check if source exists
-	srcFile, err := os.Open(srcDataPath)
+	// Load source metadata
+	srcMetadata, err := s.loadMetadata(srcMetaPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", ErrObjectNotFound
-		}
 		return "", err
 	}
-	defer srcFile.Close()
-
-	// Get source metadata
-	srcMetadata, _ := s.loadMetadata(srcMetaPath)
+	if srcMetadata == nil {
+		return "", ErrObjectNotFound
+	}
 
 	contentType := srcMetadata.ContentType
 	if contentType == "" {
@@ -280,8 +357,37 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		return "", err
 	}
 
-	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 	dstMetaPath := filepath.Join(dstObjectDir, metaFile)
+
+	// Check if source data is inline
+	if len(srcMetadata.Data) > 0 {
+		// Data is inline - copy directly
+		dstMetadata := &Metadata{
+			ContentType: contentType,
+			ETag:        srcMetadata.ETag,
+			Data:        make([]byte, len(srcMetadata.Data)),
+		}
+		copy(dstMetadata.Data, srcMetadata.Data)
+		
+		if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
+			return "", err
+		}
+		
+		return srcMetadata.ETag, nil
+	}
+
+	// Data is in separate file
+	srcDataPath := filepath.Join(srcObjectDir, dataFile)
+	srcFile, err := os.Open(srcDataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", ErrObjectNotFound
+		}
+		return "", err
+	}
+	defer srcFile.Close()
+
+	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 
 	// Create temp file for destination
 	tmpFile, err := os.CreateTemp(dstObjectDir, ".tmp-*")
@@ -331,10 +437,9 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 		return err
 	}
 
-	srcDataPath := filepath.Join(srcObjectDir, dataFile)
-
-	// Check if source exists
-	if _, err := os.Stat(srcDataPath); err != nil {
+	// Check if source exists by checking for meta file
+	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
+	if _, err := os.Stat(srcMetaPath); err != nil {
 		if os.IsNotExist(err) {
 			return ErrObjectNotFound
 		}
