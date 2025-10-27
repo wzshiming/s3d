@@ -220,8 +220,22 @@ func (s *Storage) DeleteObject(bucket, key string) error {
 		return ErrObjectNotFound
 	}
 
+	// Get bucket path before deleting the object
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
 	// Remove entire object directory
-	return os.RemoveAll(objectDir)
+	if err := os.RemoveAll(objectDir); err != nil {
+		return err
+	}
+
+	// Clean up empty parent directories
+	parentDir := filepath.Dir(objectDir)
+	s.cleanupEmptyDirs(parentDir, bucketPath)
+
+	return nil
 }
 
 // ListObjects lists objects in a bucket with optional prefix, delimiter, and marker for pagination
@@ -508,7 +522,21 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 		// If both metadata are readable and ETags match, content is the same
 		if srcErr == nil && dstErr == nil && srcMetadata != nil && dstMetadata != nil && srcMetadata.ETag == dstMetadata.ETag {
 			// Same content - just delete source (no-op rename optimization)
-			return os.RemoveAll(srcObjectDir)
+			// Get bucket path for cleanup
+			bucketPath, err := s.safePath(bucket, "")
+			if err != nil {
+				return err
+			}
+
+			if err := os.RemoveAll(srcObjectDir); err != nil {
+				return err
+			}
+
+			// Clean up empty parent directories from source
+			parentDir := filepath.Dir(srcObjectDir)
+			s.cleanupEmptyDirs(parentDir, bucketPath)
+
+			return nil
 		}
 
 		// Different content or corrupted metadata - delete destination and proceed with rename (overwrite)
@@ -516,6 +544,15 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 			return err
 		}
 	}
+
+	// Get bucket path for cleanup before renaming
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
+	// Store the parent directory of source before renaming
+	srcParentDir := filepath.Dir(srcObjectDir)
 
 	// Create parent directory for destination
 	if err := os.MkdirAll(filepath.Dir(dstObjectDir), 0755); err != nil {
@@ -526,6 +563,9 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 	if err := os.Rename(srcObjectDir, dstObjectDir); err != nil {
 		return err
 	}
+
+	// Clean up empty parent directories from source
+	s.cleanupEmptyDirs(srcParentDir, bucketPath)
 
 	return nil
 }
