@@ -28,11 +28,17 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 	// Filter buckets based on continuation token
 	startIndex := 0
 	if continuationToken != "" {
+		found := false
 		for i, b := range buckets {
 			if b.Name > continuationToken {
 				startIndex = i
+				found = true
 				break
 			}
+		}
+		// If no bucket is greater than the continuation token, return empty list
+		if !found {
+			startIndex = len(buckets)
 		}
 	}
 

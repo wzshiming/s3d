@@ -226,4 +226,72 @@ func TestListBucketsPagination(t *testing.T) {
 			t.Fatalf("Expected to find at least %d test buckets, found %d", numBuckets, foundCount)
 		}
 	})
+	
+	t.Run("NoDuplicatesAcrossPages", func(t *testing.T) {
+		// Ensure no bucket appears in multiple pages
+		maxBuckets := int32(2)
+		var allBuckets []string
+		seenBuckets := make(map[string]bool)
+		var continuationToken *string
+		
+		for {
+			output, err := ts.client.ListBuckets(ctx, &s3.ListBucketsInput{
+				MaxBuckets:        &maxBuckets,
+				ContinuationToken: continuationToken,
+			})
+			if err != nil {
+				t.Fatalf("ListBuckets failed: %v", err)
+			}
+			
+			for _, bucket := range output.Buckets {
+				name := *bucket.Name
+				if seenBuckets[name] {
+					t.Fatalf("Bucket %s appeared in multiple pages", name)
+				}
+				seenBuckets[name] = true
+				allBuckets = append(allBuckets, name)
+			}
+			
+			// Check pagination
+			if output.ContinuationToken == nil {
+				break
+			}
+			continuationToken = output.ContinuationToken
+			
+			// Safety check to prevent infinite loop
+			if len(allBuckets) > 100 {
+				t.Fatal("Too many iterations, possible infinite loop")
+			}
+		}
+		
+		// Verify we got all our test buckets without duplicates
+		foundCount := 0
+		for _, name := range allBuckets {
+			for _, testBucket := range bucketNames {
+				if name == testBucket {
+					foundCount++
+					break
+				}
+			}
+		}
+		
+		if foundCount < numBuckets {
+			t.Fatalf("Expected to find at least %d test buckets, found %d", numBuckets, foundCount)
+		}
+	})
+	
+	t.Run("EmptyResultsAfterLastBucket", func(t *testing.T) {
+		// Test that using a continuation token beyond the last bucket returns empty results
+		output, err := ts.client.ListBuckets(ctx, &s3.ListBucketsInput{
+			ContinuationToken: aws.String("zzzzz-nonexistent-bucket"),
+		})
+		if err != nil {
+			t.Fatalf("ListBuckets failed: %v", err)
+		}
+		
+		// Should not be truncated and should have no continuation token
+		if output.ContinuationToken != nil {
+			t.Fatal("Expected no continuation token for empty results")
+		}
+	})
 }
