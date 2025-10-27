@@ -15,7 +15,7 @@ const (
 	uploadsDir = ".uploads"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
-	inlineThreshold = 256
+	inlineThreshold = 4096
 )
 
 var (
