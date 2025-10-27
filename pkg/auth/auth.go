@@ -159,7 +159,7 @@ func (a *AWS4Authenticator) calculateSignatureV4(r *http.Request, secretAccessKe
 
 // canonicalURI encodes the URI path according to AWS Signature V4 specification
 // Each path segment is URI-encoded, but the forward slashes are preserved
-func (a *AWS4Authenticator) canonicalURI(path string) string {
+func canonicalURI(path string) string {
 	if path == "" {
 		return "/"
 	}
@@ -208,7 +208,7 @@ func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeader
 
 	// URI - use EscapedPath to get the properly encoded path, then encode each segment
 	// Note: r.URL.Path contains the decoded path, so we need to re-encode it
-	uri := a.canonicalURI(r.URL.Path)
+	uri := canonicalURI(r.URL.Path)
 
 	// Query string
 	queryString := r.URL.Query()

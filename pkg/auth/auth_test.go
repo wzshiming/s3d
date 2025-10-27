@@ -253,8 +253,6 @@ func containsMiddle(s, substr string) bool {
 }
 
 func TestCanonicalURI(t *testing.T) {
-	auth := NewAWS4Authenticator()
-
 	tests := []struct {
 		name     string
 		path     string
@@ -277,7 +275,7 @@ func TestCanonicalURI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := auth.canonicalURI(tt.path)
+			result := canonicalURI(tt.path)
 			if result != tt.expected {
 				t.Errorf("canonicalURI(%q) = %q, want %q", tt.path, result, tt.expected)
 			}
