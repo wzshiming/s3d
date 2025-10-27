@@ -168,7 +168,7 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 type ObjectMetadata struct {
 	ContentType string
 	ETag        string
-	// Data stores the file content inline for small files (<=4096 bytes)
+	// Data stores the file content inline for small files (<=256 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
 	Data []byte
 }
