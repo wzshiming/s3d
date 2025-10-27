@@ -61,17 +61,33 @@ Utility functions for tests:
 ./test/e2e/run_all.sh
 ```
 
-### Run specific test suites
+### Run a specific standalone test suite
 ```bash
-# Run only bucket tests
-source test/e2e/lib/config.sh
-source test/e2e/lib/utils.sh
-source test/e2e/lib/server.sh
-source test/e2e/bucket_tests.sh
-# Run test functions...
+# Run the example basic object tests suite
+./test/e2e/suites/basic_object_tests.sh
 
 # Run only auth tests
 ./test/e2e/auth_tests.sh
+```
+
+### Run specific test suites programmatically
+```bash
+# Source the libraries and run individual test files
+source test/e2e/lib/config.sh
+source test/e2e/lib/utils.sh
+source test/e2e/lib/server.sh
+
+# Initialize and start server
+export E2E_TEST_DATA_DIR=$(create_temp_dir)
+export E2E_SERVER_DATA_DIR=$(create_temp_dir)
+trap cleanup_server EXIT
+verify_aws_cli
+start_server
+
+# Run specific test suite
+source test/e2e/bucket_tests.sh
+test_create_bucket
+test_list_buckets
 ```
 
 ### Using make

@@ -1,9 +1,11 @@
 #!/bin/bash
 # Tests for basic object operations
+# This is an example test suite showing the new modular structure
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/config.sh"
 source "${SCRIPT_DIR}/../lib/utils.sh"
+source "${SCRIPT_DIR}/../lib/server.sh"
 
 # Test: Upload a file
 test_upload_file() {
@@ -102,3 +104,44 @@ test_remove_all_objects() {
         assert_failure "${remaining} objects still remain"
     fi
 }
+
+# Main function to run this suite standalone
+main() {
+    set -e
+    
+    section_header "Basic Object Operations Test Suite"
+    
+    # Initialize test data directories
+    export E2E_TEST_DATA_DIR=$(create_temp_dir)
+    export E2E_SERVER_DATA_DIR=$(create_temp_dir)
+    
+    # Setup cleanup trap
+    trap cleanup_server EXIT
+    
+    # Verify prerequisites and start server
+    verify_aws_cli
+    start_server || exit 1
+    
+    # Create test bucket
+    aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 mb "s3://${E2E_TEST_BUCKET}"
+    
+    # Run tests
+    test_upload_file
+    test_list_objects
+    test_download_file
+    test_upload_multiple_files
+    test_list_with_prefix
+    test_copy_object
+    test_delete_object
+    test_remove_all_objects
+    
+    # Cleanup bucket
+    aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 rb "s3://${E2E_TEST_BUCKET}"
+    
+    section_success "Basic object operations test suite passed!"
+}
+
+# Run main if executed directly
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+    main
+fi
