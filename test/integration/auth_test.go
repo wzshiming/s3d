@@ -33,10 +33,10 @@ func TestAuthenticationRequired(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	authenticator := auth.NewAuthenticator()
+	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("test-access-key", "test-secret-key")
 
-	s3Server := server.NewS3Server(store, authenticator)
+	s3Handler := server.NewS3Handler(store)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -45,7 +45,7 @@ func TestAuthenticationRequired(t *testing.T) {
 	defer listener.Close()
 
 	addr := listener.Addr().String()
-	srv := &http.Server{Handler: s3Server.Handler()}
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
 
 	go srv.Serve(listener)
 	defer srv.Shutdown(context.Background())
@@ -169,10 +169,10 @@ func TestAuthenticatedBucketOperations(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	authenticator := auth.NewAuthenticator()
+	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("my-access-key", "my-secret-key")
 
-	s3Server := server.NewS3Server(store, authenticator)
+	s3Handler := server.NewS3Handler(store)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -181,7 +181,7 @@ func TestAuthenticatedBucketOperations(t *testing.T) {
 	defer listener.Close()
 
 	addr := listener.Addr().String()
-	srv := &http.Server{Handler: s3Server.Handler()}
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
 
 	go srv.Serve(listener)
 	defer srv.Shutdown(context.Background())
@@ -280,10 +280,10 @@ func TestAuthenticatedObjectOperations(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	authenticator := auth.NewAuthenticator()
+	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("object-key", "object-secret")
 
-	s3Server := server.NewS3Server(store, authenticator)
+	s3Handler := server.NewS3Handler(store)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -292,7 +292,7 @@ func TestAuthenticatedObjectOperations(t *testing.T) {
 	defer listener.Close()
 
 	addr := listener.Addr().String()
-	srv := &http.Server{Handler: s3Server.Handler()}
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
 
 	go srv.Serve(listener)
 	defer srv.Shutdown(context.Background())
@@ -435,11 +435,11 @@ func TestMultipleCredentials(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	authenticator := auth.NewAuthenticator()
+	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("user1-key", "user1-secret")
 	authenticator.AddCredentials("user2-key", "user2-secret")
 
-	s3Server := server.NewS3Server(store, authenticator)
+	s3Handler := server.NewS3Handler(store)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -448,7 +448,7 @@ func TestMultipleCredentials(t *testing.T) {
 	defer listener.Close()
 
 	addr := listener.Addr().String()
-	srv := &http.Server{Handler: s3Server.Handler()}
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
 
 	go srv.Serve(listener)
 	defer srv.Shutdown(context.Background())

@@ -54,7 +54,7 @@ func setupTestServer() *testServer {
 		panic(err)
 	}
 
-	s3Server := server.NewS3Server(store, nil)
+	s3Handler := server.NewS3Handler(store)
 
 	// Start test server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -63,7 +63,7 @@ func setupTestServer() *testServer {
 	}
 
 	addr := listener.Addr().String()
-	srv := &http.Server{Handler: s3Server.Handler()}
+	srv := &http.Server{Handler: s3Handler}
 
 	go srv.Serve(listener)
 

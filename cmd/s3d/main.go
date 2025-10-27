@@ -19,7 +19,7 @@ type Config struct {
 }
 
 // parseCredentials parses comma-separated credentials and adds them to the authenticator
-func parseCredentials(credString string, authenticator *auth.Authenticator) error {
+func parseCredentials(credString string, authenticator *auth.AWS4Authenticator) error {
 	if credString == "" {
 		return nil
 	}
@@ -36,18 +36,19 @@ func parseCredentials(credString string, authenticator *auth.Authenticator) erro
 }
 
 // createServer creates and configures the S3 server
-func createServer(cfg *Config) (*server.S3Server, error) {
+func createServer(cfg *Config) (http.Handler, error) {
 	// Create storage
 	store, err := storage.NewStorage(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
+	s := server.NewS3Handler(store)
 	if cfg.Credentials == "" {
-		return server.NewS3Server(store, nil), nil
+		return s, nil
 	}
 
 	// Create authenticator
-	authenticator := auth.NewAuthenticator()
+	authenticator := auth.NewAWS4Authenticator()
 
 	// Add credentials if provided
 	if err := parseCredentials(cfg.Credentials, authenticator); err != nil {
@@ -55,7 +56,7 @@ func createServer(cfg *Config) (*server.S3Server, error) {
 	}
 
 	// Create server
-	return server.NewS3Server(store, authenticator), nil
+	return authenticator.AuthMiddleware(s), nil
 }
 
 func main() {
@@ -70,7 +71,7 @@ func main() {
 		Credentials: *credentials,
 	}
 
-	s3Server, err := createServer(cfg)
+	handler, err := createServer(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}
@@ -83,7 +84,7 @@ func main() {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
 	}
 
-	if err := http.ListenAndServe(cfg.Addr, s3Server.Handler()); err != nil {
+	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

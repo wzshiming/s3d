@@ -22,7 +22,7 @@ func urlSafeToStdBase64(urlSafe string) string {
 }
 
 // xmlResponse writes an XML response
-func (s *S3Server) xmlResponse(w http.ResponseWriter, data any, status int) {
+func (s *S3Handler) xmlResponse(w http.ResponseWriter, data any, status int) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
 
@@ -35,7 +35,7 @@ func (s *S3Server) xmlResponse(w http.ResponseWriter, data any, status int) {
 }
 
 // errorResponse writes an error response
-func (s *S3Server) errorResponse(w http.ResponseWriter, r *http.Request, code, message string, status int) {
+func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, message string, status int) {
 	err := s3types.Error{
 		Code:    code,
 		Message: message,

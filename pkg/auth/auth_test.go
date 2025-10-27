@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewAuthenticator(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	if auth == nil {
 		t.Fatal("NewAuthenticator returned nil")
 	}
@@ -19,7 +19,7 @@ func TestNewAuthenticator(t *testing.T) {
 }
 
 func TestAddCredentials(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	accessKey := "test-access-key"
 	secretKey := "test-secret-key"
 
@@ -41,25 +41,25 @@ func TestAddCredentials(t *testing.T) {
 }
 
 func TestAuthenticateNoAuth(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
 
 	// When no credentials are configured, authentication should succeed
-	user, err := auth.Authenticate(req)
+	user, err := auth.authenticate(req)
 	if err == nil {
 		t.Fatalf("Expected authentication to fail with no credentials, got user: %s", user)
 	}
 }
 
 func TestAuthenticateMissingHeader(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	auth.AddCredentials("test-key", "test-secret")
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
 
 	// When credentials are configured but auth header is missing, it should fail
-	_, err := auth.Authenticate(req)
+	_, err := auth.authenticate(req)
 	if err == nil {
 		t.Fatal("Expected authentication to fail with missing header")
 	}
@@ -69,13 +69,13 @@ func TestAuthenticateMissingHeader(t *testing.T) {
 }
 
 func TestAuthenticateUnsupportedType(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	auth.AddCredentials("test-key", "test-secret")
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
 	req.Header.Set("Authorization", "Basic dGVzdDp0ZXN0")
 
-	_, err := auth.Authenticate(req)
+	_, err := auth.authenticate(req)
 	if err == nil {
 		t.Fatal("Expected authentication to fail with unsupported type")
 	}
@@ -85,7 +85,7 @@ func TestAuthenticateUnsupportedType(t *testing.T) {
 }
 
 func TestAuthenticateInvalidFormat(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	auth.AddCredentials("test-key", "test-secret")
 
 	tests := []struct {
@@ -102,7 +102,7 @@ func TestAuthenticateInvalidFormat(t *testing.T) {
 			req := httptest.NewRequest("GET", "/bucket/object", nil)
 			req.Header.Set("Authorization", tt.header)
 
-			_, err := auth.Authenticate(req)
+			_, err := auth.authenticate(req)
 			if err == nil {
 				t.Fatal("Expected authentication to fail with invalid format")
 			}
@@ -111,13 +111,13 @@ func TestAuthenticateInvalidFormat(t *testing.T) {
 }
 
 func TestAuthenticateInvalidCredential(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	auth.AddCredentials("valid-key", "valid-secret")
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=invalid-key/20230101/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-date,Signature=abc123")
 
-	_, err := auth.Authenticate(req)
+	_, err := auth.authenticate(req)
 	if err == nil {
 		t.Fatal("Expected authentication to fail with invalid access key")
 	}
@@ -136,7 +136,7 @@ func TestAuthenticateInvalidCredential(t *testing.T) {
 }
 
 func TestAuthenticateValidCredential(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 	auth.AddCredentials("valid-key", "valid-secret")
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
@@ -144,21 +144,21 @@ func TestAuthenticateValidCredential(t *testing.T) {
 	req.Header.Set("X-Amz-Date", "20230101T000000Z")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=valid-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=b06c3241e27bbe06de4271ac6617cd88056188eb970ce7123f5aa7ce5e5b05bf")
 
-	_, err := auth.Authenticate(req)
+	_, err := auth.authenticate(req)
 	if err != nil {
 		t.Fatalf("Expected authentication to succeed with valid credential: %v", err)
 	}
 }
 
 func TestSanitizeBucketName(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 
 	// Helper to test sanitization indirectly through authentication
 	// Since sanitization is in storage package, we'll test auth middleware
 	req := httptest.NewRequest("GET", "/test-bucket/object", nil)
 
 	// Test that authentication works with no credentials
-	user, err := auth.Authenticate(req)
+	user, err := auth.authenticate(req)
 	if err == nil {
 		t.Fatalf("Expected authentication to fail due to bucket name, got user: %s", user)
 	}
@@ -215,7 +215,7 @@ func TestSHA256Hash(t *testing.T) {
 }
 
 func TestCreateCanonicalRequest(t *testing.T) {
-	auth := NewAuthenticator()
+	auth := NewAWS4Authenticator()
 
 	req := httptest.NewRequest("GET", "/bucket/object?key=value", nil)
 	req.Header.Set("Host", "localhost")

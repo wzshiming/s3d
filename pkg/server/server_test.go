@@ -8,7 +8,6 @@ import (
 
 	"time"
 
-	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -24,8 +23,7 @@ func TestServerRun(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	authenticator := auth.NewAuthenticator()
-	s3Server := NewS3Server(store, authenticator)
+	s3Handler := NewS3Handler(store)
 
 	// Find an available port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -45,7 +43,7 @@ func TestServerRun(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Server should be ready
-	if s3Server == nil {
+	if s3Handler == nil {
 		t.Fatal("Server is nil")
 	}
 

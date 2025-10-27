@@ -13,7 +13,7 @@ import (
 )
 
 // handlePutObject handles PutObject operation
-func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -35,7 +35,7 @@ func (s *S3Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucke
 }
 
 // handleGetObject handles GetObject operation
-func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	reader, info, err := s.storage.GetObject(bucket, key)
 	if err != nil {
 		switch err {
@@ -60,7 +60,7 @@ func (s *S3Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucke
 }
 
 // handleHeadObject handles HeadObject operation
-func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+func (s *S3Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	reader, info, err := s.storage.GetObject(bucket, key)
 	if err != nil {
 		switch err {
@@ -83,7 +83,7 @@ func (s *S3Server) handleHeadObject(w http.ResponseWriter, r *http.Request, buck
 }
 
 // handleDeleteObject handles DeleteObject operation
-func (s *S3Server) handleDeleteObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	err := s.storage.DeleteObject(bucket, key)
 	if err != nil && err != storage.ErrObjectNotFound {
 		if err == storage.ErrBucketNotFound {
@@ -139,7 +139,7 @@ func (s *S3Server) handleDeleteObjects(w http.ResponseWriter, r *http.Request, b
 }
 
 // handleCopyObject handles CopyObject operation
-func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstBucket, dstKey string) {
+func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dstBucket, dstKey string) {
 	// Parse x-amz-copy-source header
 	copySource := r.Header.Get("x-amz-copy-source")
 	if copySource == "" {
@@ -183,7 +183,7 @@ func (s *S3Server) handleCopyObject(w http.ResponseWriter, r *http.Request, dstB
 }
 
 // handleRenameObject handles RenameObject operation
-func (s *S3Server) handleRenameObject(w http.ResponseWriter, r *http.Request, bucket, dstKey string) {
+func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, bucket, dstKey string) {
 	// Parse x-amz-rename-source header
 	renameSource := r.Header.Get("x-amz-rename-source")
 	if renameSource == "" {
@@ -229,7 +229,7 @@ func (s *S3Server) handleRenameObject(w http.ResponseWriter, r *http.Request, bu
 }
 
 // handleListObjects handles ListObjects operation (v1 and v2)
-func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	query := r.URL.Query()
 
 	// Check if this is ListObjectsV2 (list-type=2)
@@ -305,7 +305,7 @@ func (s *S3Server) handleListObjects(w http.ResponseWriter, r *http.Request, buc
 }
 
 // handleListObjectsV2 handles ListObjectsV2 operation
-func (s *S3Server) handleListObjectsV2(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
 	delimiter := query.Get("delimiter")

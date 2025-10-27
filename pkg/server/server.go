@@ -4,39 +4,23 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
-// S3Server represents the S3-compatible server
-type S3Server struct {
-	storage       *storage.Storage
-	authenticator *auth.Authenticator
+// S3Handler represents the S3-compatible server
+type S3Handler struct {
+	storage *storage.Storage
 }
 
-// NewS3Server creates a new S3 server
-func NewS3Server(storage *storage.Storage, authenticator *auth.Authenticator) *S3Server {
-	return &S3Server{
-		storage:       storage,
-		authenticator: authenticator,
+// NewS3Handler creates a new S3 server
+func NewS3Handler(storage *storage.Storage) *S3Handler {
+	return &S3Handler{
+		storage: storage,
 	}
-}
-
-// Handler returns the HTTP handler
-func (s *S3Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	var handler http.Handler = http.HandlerFunc(s.handleRequest)
-
-	if s.authenticator != nil {
-		handler = s.authenticator.AuthMiddleware(handler)
-	}
-	mux.Handle("/", handler)
-
-	return mux
 }
 
 // handleRequest handles all S3 requests
-func (s *S3Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	parts := strings.SplitN(path, "/", 2)
 

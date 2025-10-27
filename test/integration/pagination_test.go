@@ -284,7 +284,7 @@ func TestMultipartPagination(t *testing.T) {
 	// Test ListParts pagination
 	t.Run("ListParts_Pagination", func(t *testing.T) {
 		objectKey := "multipart-object.txt"
-		
+
 		// Create a multipart upload
 		initOutput, err := ts.client.CreateMultipartUpload(ts.ctx, &s3.CreateMultipartUploadInput{
 			Bucket: aws.String(bucketName),

@@ -21,27 +21,27 @@ type Credentials struct {
 	SecretAccessKey string
 }
 
-// Authenticator handles authentication
-type Authenticator struct {
+// AWS4Authenticator handles authentication
+type AWS4Authenticator struct {
 	credentials map[string]string // accessKeyID -> secretAccessKey
 }
 
-// NewAuthenticator creates a new authenticator
-func NewAuthenticator() *Authenticator {
-	return &Authenticator{
+// NewAWS4Authenticator creates a new authenticator
+func NewAWS4Authenticator() *AWS4Authenticator {
+	return &AWS4Authenticator{
 		credentials: make(map[string]string),
 	}
 }
 
 // AddCredentials adds credentials for authentication
-func (a *Authenticator) AddCredentials(accessKeyID, secretAccessKey string) {
+func (a *AWS4Authenticator) AddCredentials(accessKeyID, secretAccessKey string) {
 	a.credentials[accessKeyID] = secretAccessKey
 }
 
 // AuthMiddleware is HTTP middleware for authentication
-func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
+func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := a.Authenticate(r)
+		_, err := a.authenticate(r)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Authentication failed: %v", err), http.StatusForbidden)
 			return
@@ -51,7 +51,7 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 }
 
 // Authenticate validates the request signature
-func (a *Authenticator) Authenticate(r *http.Request) (string, error) {
+func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 
 	// Check if authentication is required
@@ -68,7 +68,7 @@ func (a *Authenticator) Authenticate(r *http.Request) (string, error) {
 }
 
 // authenticateV4 validates AWS Signature Version 4
-func (a *Authenticator) authenticateV4(r *http.Request, authHeader string) (string, error) {
+func (a *AWS4Authenticator) authenticateV4(r *http.Request, authHeader string) (string, error) {
 	// Parse authorization header
 	// Format: AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=...
 	if !strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256 ") {
@@ -123,7 +123,7 @@ func (a *Authenticator) authenticateV4(r *http.Request, authHeader string) (stri
 }
 
 // calculateSignatureV4 calculates AWS Signature Version 4
-func (a *Authenticator) calculateSignatureV4(r *http.Request, secretAccessKey, date, region, service, signedHeaders string) (string, error) {
+func (a *AWS4Authenticator) calculateSignatureV4(r *http.Request, secretAccessKey, date, region, service, signedHeaders string) (string, error) {
 	// Step 1: Create canonical request
 	canonicalRequest := a.createCanonicalRequest(r, signedHeaders)
 
@@ -157,7 +157,7 @@ func (a *Authenticator) calculateSignatureV4(r *http.Request, secretAccessKey, d
 }
 
 // createCanonicalRequest creates a canonical request for AWS Signature V4
-func (a *Authenticator) createCanonicalRequest(r *http.Request, signedHeaders string) string {
+func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeaders string) string {
 	// Method
 	method := r.Method
 

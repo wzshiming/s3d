@@ -14,7 +14,7 @@ import (
 )
 
 // handleInitiateMultipartUpload handles InitiateMultipartUpload operation
-func (s *S3Server) handleInitiateMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key string) {
+func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -40,7 +40,7 @@ func (s *S3Server) handleInitiateMultipartUpload(w http.ResponseWriter, r *http.
 }
 
 // handleUploadPart handles UploadPart operation
-func (s *S3Server) handleUploadPart(w http.ResponseWriter, r *http.Request, bucket, key, uploadID, partNumberStr string) {
+func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, bucket, key, uploadID, partNumberStr string) {
 	partNumber, err := strconv.Atoi(partNumberStr)
 	if err != nil {
 		s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
@@ -74,7 +74,7 @@ func (s *S3Server) handleUploadPart(w http.ResponseWriter, r *http.Request, buck
 }
 
 // handleUploadPartCopy handles UploadPartCopy operation
-func (s *S3Server) handleUploadPartCopy(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string, partNumber int) {
+func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string, partNumber int) {
 	// Parse x-amz-copy-source header
 	copySource := r.Header.Get("x-amz-copy-source")
 	if copySource == "" {
@@ -129,7 +129,7 @@ func (s *S3Server) handleUploadPartCopy(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleCompleteMultipartUpload handles CompleteMultipartUpload operation
-func (s *S3Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
+func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	var req s3types.CompleteMultipartUpload
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, r, "MalformedXML", "Invalid XML", http.StatusBadRequest)
@@ -169,7 +169,7 @@ func (s *S3Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.
 }
 
 // handleAbortMultipartUpload handles AbortMultipartUpload operation
-func (s *S3Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
+func (s *S3Handler) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	err := s.storage.AbortMultipartUpload(bucket, key, uploadID)
 	if err != nil {
 		switch err {
@@ -187,7 +187,7 @@ func (s *S3Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Req
 }
 
 // handleListMultipartUploads handles ListMultipartUploads operation
-func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Request, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
 	keyMarker := query.Get("key-marker")
@@ -252,7 +252,7 @@ func (s *S3Server) handleListMultipartUploads(w http.ResponseWriter, r *http.Req
 }
 
 // handleListParts handles ListParts operation
-func (s *S3Server) handleListParts(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
+func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	query := r.URL.Query()
 	partNumberMarker := 0
 	if pnm := query.Get("part-number-marker"); pnm != "" {

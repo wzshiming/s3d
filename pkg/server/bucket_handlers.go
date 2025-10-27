@@ -8,7 +8,7 @@ import (
 )
 
 // handleListBuckets handles ListBuckets operation
-func (s *S3Server) handleListBuckets(w http.ResponseWriter, r *http.Request) {
+func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 	buckets, err := s.storage.ListBuckets()
 	if err != nil {
 		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
@@ -33,7 +33,7 @@ func (s *S3Server) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateBucket handles CreateBucket operation
-func (s *S3Server) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	err := s.storage.CreateBucket(bucket)
 	if err != nil {
 		if err == storage.ErrBucketAlreadyExists {
@@ -48,7 +48,7 @@ func (s *S3Server) handleCreateBucket(w http.ResponseWriter, r *http.Request, bu
 }
 
 // handleDeleteBucket handles DeleteBucket operation
-func (s *S3Server) handleDeleteBucket(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	err := s.storage.DeleteBucket(bucket)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
@@ -63,7 +63,7 @@ func (s *S3Server) handleDeleteBucket(w http.ResponseWriter, r *http.Request, bu
 }
 
 // handleHeadBucket handles HeadBucket operation
-func (s *S3Server) handleHeadBucket(w http.ResponseWriter, r *http.Request, bucket string) {
+func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	if !s.storage.BucketExists(bucket) {
 		w.WriteHeader(http.StatusNotFound)
 		return
