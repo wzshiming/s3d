@@ -41,9 +41,9 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Check if object already exists and load existing metadata
-	var existingMetadata *Metadata
+	var existingMetadata *ObjectMetadata
 	if _, err := os.Stat(metaPath); err == nil {
-		existingMetadata, err = s.loadMetadata(metaPath)
+		existingMetadata, err = s.loadObjectMetadata(metaPath)
 		if err != nil {
 			// If metadata is corrupted, treat as if object doesn't exist and overwrite
 			existingMetadata = nil
@@ -97,7 +97,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		}, nil
 	}
 
-	metadata := &Metadata{
+	metadata := &ObjectMetadata{
 		ContentType: contentType,
 		ETag:        etag,
 	}
@@ -112,7 +112,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		metadata.Data = fileData
 
 		// Save metadata with inline data
-		if err := s.saveMetadata(metaPath, metadata); err != nil {
+		if err := s.saveObjectMetadata(metaPath, metadata); err != nil {
 			return nil, err
 		}
 		// No need to create a separate data file
@@ -127,7 +127,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		}
 
 		// Store metadata without inline data
-		if err := s.saveMetadata(metaPath, metadata); err != nil {
+		if err := s.saveObjectMetadata(metaPath, metadata); err != nil {
 			return nil, err
 		}
 	}
@@ -162,7 +162,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Load metadata first
-	metadata, err := s.loadMetadata(metaPath)
+	metadata, err := s.loadObjectMetadata(metaPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -324,7 +324,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			}
 
 			// Load metadata
-			metadata, _ := s.loadMetadata(path)
+			metadata, _ := s.loadObjectMetadata(path)
 
 			var size int64
 
@@ -400,7 +400,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
 
 	// Load source metadata
-	srcMetadata, err := s.loadMetadata(srcMetaPath)
+	srcMetadata, err := s.loadObjectMetadata(srcMetaPath)
 	if err != nil {
 		return nil, err
 	}
@@ -428,9 +428,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 
 	// Check if destination object already exists
-	var existingDstMetadata *Metadata
+	var existingDstMetadata *ObjectMetadata
 	if _, err := os.Stat(dstMetaPath); err == nil {
-		existingDstMetadata, err = s.loadMetadata(dstMetaPath)
+		existingDstMetadata, err = s.loadObjectMetadata(dstMetaPath)
 		if err != nil {
 			// If metadata is corrupted, treat as if object doesn't exist and overwrite
 			existingDstMetadata = nil
@@ -471,14 +471,14 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	// Check if source data is inline
 	if len(srcMetadata.Data) > 0 {
 		// Data is inline - copy directly
-		dstMetadata := &Metadata{
+		dstMetadata := &ObjectMetadata{
 			ContentType: contentType,
 			ETag:        srcMetadata.ETag,
 			Data:        make([]byte, len(srcMetadata.Data)),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
 
-		if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
+		if err := s.saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
 			return nil, err
 		}
 
@@ -537,11 +537,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 
 	// Store metadata - use URL-safe base64 encoded SHA256
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	dstMetadata := &Metadata{
+	dstMetadata := &ObjectMetadata{
 		ContentType: contentType,
 		ETag:        etag,
 	}
-	if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
+	if err := s.saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
 		return nil, err
 	}
 
@@ -599,8 +599,8 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 	if _, err := os.Stat(dstMetaPath); err == nil {
 		// Destination exists - check if it's the same as source
 		// Load both metadata to compare
-		srcMetadata, srcErr := s.loadMetadata(srcMetaPath)
-		dstMetadata, dstErr := s.loadMetadata(dstMetaPath)
+		srcMetadata, srcErr := s.loadObjectMetadata(srcMetaPath)
+		dstMetadata, dstErr := s.loadObjectMetadata(dstMetaPath)
 
 		// If both metadata are readable and ETags match, content is the same
 		if srcErr == nil && dstErr == nil && srcMetadata != nil && dstMetadata != nil && srcMetadata.ETag == dstMetadata.ETag {
