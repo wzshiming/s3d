@@ -41,6 +41,16 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	dataPath := filepath.Join(objectDir, dataFile)
 	metaPath := filepath.Join(objectDir, metaFile)
 
+	// Check if object already exists and load existing metadata
+	var existingMetadata *Metadata
+	if _, err := os.Stat(metaPath); err == nil {
+		existingMetadata, err = s.loadMetadata(metaPath)
+		if err != nil {
+			// If metadata is corrupted, treat as if object doesn't exist and overwrite
+			existingMetadata = nil
+		}
+	}
+
 	// Create temp file in the object directory
 	tmpFile, err := s.tempFile()
 	if err != nil {
@@ -65,6 +75,16 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+
+	// Check compatibility: if object exists with same ETag, it's a duplicate write
+	// This is compatible and we can proceed without issue (S3 behavior)
+	if existingMetadata != nil && existingMetadata.ETag == etag {
+		// Same content - compatible duplicate write, just return existing ETag
+		// No need to rewrite the object
+		// Note: tmpFile is already cleaned up by defer
+		return etag, nil
+	}
+
 	metadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
@@ -84,6 +104,10 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 			return "", err
 		}
 		// No need to create a separate data file
+		// If there was an old data file (object was previously large), clean it up
+		if existingMetadata != nil && len(existingMetadata.Data) == 0 {
+			os.Remove(dataPath)
+		}
 	} else {
 		// Move temp file to data file for larger files
 		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
@@ -358,6 +382,24 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	}
 
 	dstMetaPath := filepath.Join(dstObjectDir, metaFile)
+	dstDataPath := filepath.Join(dstObjectDir, dataFile)
+
+	// Check if destination object already exists
+	var existingDstMetadata *Metadata
+	if _, err := os.Stat(dstMetaPath); err == nil {
+		existingDstMetadata, err = s.loadMetadata(dstMetaPath)
+		if err != nil {
+			// If metadata is corrupted, treat as if object doesn't exist and overwrite
+			existingDstMetadata = nil
+		}
+	}
+
+	// Check compatibility: if destination exists with same ETag as source, it's a duplicate
+	// This is compatible and we can skip the copy operation
+	if existingDstMetadata != nil && existingDstMetadata.ETag == srcMetadata.ETag {
+		// Same content already at destination - compatible duplicate, skip copy
+		return srcMetadata.ETag, nil
+	}
 
 	// Check if source data is inline
 	if len(srcMetadata.Data) > 0 {
@@ -373,6 +415,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 			return "", err
 		}
 
+		// If destination previously had separate data file, clean it up
+		if existingDstMetadata != nil && len(existingDstMetadata.Data) == 0 {
+			os.Remove(dstDataPath)
+		}
+
 		return srcMetadata.ETag, nil
 	}
 
@@ -386,8 +433,6 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		return "", err
 	}
 	defer srcFile.Close()
-
-	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 
 	// Create temp file for destination
 	tmpFile, err := s.tempFile()
@@ -450,6 +495,26 @@ func (s *Storage) RenameObject(bucket, srcKey, dstKey string) error {
 	dstObjectDir, err := s.safePath(bucket, dstKey)
 	if err != nil {
 		return err
+	}
+
+	// Check if destination already exists (compatibility check)
+	dstMetaPath := filepath.Join(dstObjectDir, metaFile)
+	if _, err := os.Stat(dstMetaPath); err == nil {
+		// Destination exists - check if it's the same as source
+		// Load both metadata to compare
+		srcMetadata, srcErr := s.loadMetadata(srcMetaPath)
+		dstMetadata, dstErr := s.loadMetadata(dstMetaPath)
+
+		// If both metadata are readable and ETags match, content is the same
+		if srcErr == nil && dstErr == nil && srcMetadata != nil && dstMetadata != nil && srcMetadata.ETag == dstMetadata.ETag {
+			// Same content - just delete source (no-op rename optimization)
+			return os.RemoveAll(srcObjectDir)
+		}
+
+		// Different content or corrupted metadata - delete destination and proceed with rename (overwrite)
+		if err := os.RemoveAll(dstObjectDir); err != nil {
+			return err
+		}
 	}
 
 	// Create parent directory for destination

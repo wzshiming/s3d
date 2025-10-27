@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/bucket_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
+source "${SCRIPT_DIR}/duplicate_write_tests.sh"
 
 # Run setup
 setup
@@ -27,6 +28,14 @@ test_copy_object
 test_rename_object
 test_delete_object
 test_delete_objects
+
+# Run duplicate write compatibility tests
+test_put_duplicate_same_content
+test_put_duplicate_different_content
+test_copy_to_existing_same_content
+test_copy_to_existing_different_content
+test_rename_to_existing_same_content
+test_rename_to_existing_different_content
 
 # Run advanced tests
 test_multipart_upload
