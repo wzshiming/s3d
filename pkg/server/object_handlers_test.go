@@ -1060,8 +1060,8 @@ func TestDeleteObjects(t *testing.T) {
 	// Test DeleteObjects with mixed existing and non-existing objects
 	t.Run("DeleteMixedObjects", func(t *testing.T) {
 		objectsToDelete := []types.ObjectIdentifier{
-			{Key: aws.String("obj5.txt")},           // exists
-			{Key: aws.String("nonexistent3.txt")},   // doesn't exist
+			{Key: aws.String("obj5.txt")},         // exists
+			{Key: aws.String("nonexistent3.txt")}, // doesn't exist
 		}
 
 		output, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{

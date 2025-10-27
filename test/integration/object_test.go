@@ -415,7 +415,7 @@ func TestDeleteObjects(t *testing.T) {
 			Bucket: aws.String(bucketName),
 			Delete: &types.Delete{
 				Objects: []types.ObjectIdentifier{
-					{Key: aws.String("obj5.txt")},        // exists
+					{Key: aws.String("obj5.txt")},         // exists
 					{Key: aws.String("nonexistent3.txt")}, // doesn't exist
 				},
 			},
