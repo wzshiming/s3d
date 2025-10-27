@@ -19,41 +19,22 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	buckets, err := s.storage.ListBuckets()
+	// Fetch one extra bucket to determine if there are more results
+	buckets, err := s.storage.ListBuckets(continuationToken, maxBuckets+1)
 	if err != nil {
 		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Filter buckets based on continuation token
-	startIndex := 0
-	if continuationToken != "" {
-		found := false
-		for i, b := range buckets {
-			if b.Name > continuationToken {
-				startIndex = i
-				found = true
-				break
-			}
-		}
-		// If no bucket is greater than the continuation token, return empty list
-		if !found {
-			startIndex = len(buckets)
-		}
-	}
-
-	// Get buckets starting from the continuation point
-	filteredBuckets := buckets[startIndex:]
-
 	// Determine if results are truncated
-	isTruncated := len(filteredBuckets) > maxBuckets
+	isTruncated := len(buckets) > maxBuckets
 	var nextContinuationToken string
 	if isTruncated {
 		// Limit to maxBuckets
-		filteredBuckets = filteredBuckets[:maxBuckets]
+		buckets = buckets[:maxBuckets]
 		// Set next continuation token to the last bucket name
-		if len(filteredBuckets) > 0 {
-			nextContinuationToken = filteredBuckets[len(filteredBuckets)-1].Name
+		if len(buckets) > 0 {
+			nextContinuationToken = buckets[len(buckets)-1].Name
 		}
 	}
 
@@ -69,7 +50,7 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 		result.ContinuationToken = nextContinuationToken
 	}
 
-	for _, b := range filteredBuckets {
+	for _, b := range buckets {
 		result.Buckets.Bucket = append(result.Buckets.Bucket, s3types.Bucket{
 			Name:         b.Name,
 			CreationDate: b.ModTime,

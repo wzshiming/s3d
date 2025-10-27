@@ -32,8 +32,8 @@ func (s *Storage) DeleteBucket(bucket string) error {
 	return os.RemoveAll(bucketPath)
 }
 
-// ListBuckets lists all buckets
-func (s *Storage) ListBuckets() ([]BucketInfo, error) {
+// ListBuckets lists buckets with optional continuation token and max buckets for pagination
+func (s *Storage) ListBuckets(continuationToken string, maxBuckets int) ([]BucketInfo, error) {
 	entries, err := os.ReadDir(s.basePath)
 	if err != nil {
 		return nil, err
@@ -48,6 +48,12 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 		if sanitizeBucketName(name) != nil {
 			continue
 		}
+		
+		// Apply continuation token filter - only include buckets after the token
+		if continuationToken != "" && name <= continuationToken {
+			continue
+		}
+		
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -56,6 +62,11 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 			Name:    name,
 			ModTime: info.ModTime(),
 		})
+		
+		// Stop if we've reached maxBuckets (when maxBuckets > 0)
+		if maxBuckets > 0 && len(buckets) >= maxBuckets {
+			break
+		}
 	}
 	return buckets, nil
 }
