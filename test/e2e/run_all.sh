@@ -18,6 +18,9 @@ test_list_empty_buckets
 test_create_bucket
 test_list_buckets
 
+# Run bucket pagination test
+test_list_buckets_pagination
+
 # Run object tests
 test_upload_file
 test_list_objects
