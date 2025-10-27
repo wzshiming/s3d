@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"encoding/json"
+	"encoding/gob"
 	"errors"
 	"os"
 	"path/filepath"
@@ -156,31 +156,36 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 
 // Metadata represents object metadata
 type Metadata struct {
-	ContentType string `json:"Content-Type,omitempty"`
-	ETag        string `json:"ETag,omitempty"`
+	ContentType string
+	ETag        string
 }
 
 // saveMetadata saves object metadata
 func (s *Storage) saveMetadata(path string, metadata *Metadata) error {
-	data, err := json.Marshal(metadata)
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(metadata)
 }
 
 // loadMetadata loads object metadata
 func (s *Storage) loadMetadata(path string) (*Metadata, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer file.Close()
 
 	var metadata Metadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err
 	}
 	return &metadata, nil
