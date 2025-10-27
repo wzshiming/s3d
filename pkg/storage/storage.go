@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/gob"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,59 @@ func sanitizeObjectKey(key string) error {
 	return nil
 }
 
+// encodePathComponent encodes a path component for filesystem storage
+// This handles non-ASCII characters by URL encoding them to ensure
+// filesystem compatibility across different platforms
+func encodePathComponent(component string) string {
+	// URL encode the component, but preserve forward slashes for path separators
+	// We need to encode each path segment separately to preserve the directory structure
+	return url.PathEscape(component)
+}
+
+// decodePathComponent decodes a filesystem path component back to the original key
+func decodePathComponent(component string) (string, error) {
+	return url.PathUnescape(component)
+}
+
+// encodeObjectKey encodes an object key for filesystem storage
+// It encodes each path component separately to preserve directory structure
+func encodeObjectKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	
+	// Split the key into path components
+	parts := strings.Split(key, "/")
+	encodedParts := make([]string, len(parts))
+	
+	for i, part := range parts {
+		encodedParts[i] = encodePathComponent(part)
+	}
+	
+	return strings.Join(encodedParts, "/")
+}
+
+// decodeObjectKey decodes a filesystem path back to the original object key
+func decodeObjectKey(encodedKey string) (string, error) {
+	if encodedKey == "" {
+		return "", nil
+	}
+	
+	// Split the encoded key into path components
+	parts := strings.Split(encodedKey, "/")
+	decodedParts := make([]string, len(parts))
+	
+	for i, part := range parts {
+		decoded, err := decodePathComponent(part)
+		if err != nil {
+			return "", err
+		}
+		decodedParts[i] = decoded
+	}
+	
+	return strings.Join(decodedParts, "/"), nil
+}
+
 // safePath returns the safe filesystem path for an object
 // Returns the object directory path (not the data file)
 func (s *Storage) safePath(bucket, key string) (string, error) {
@@ -136,8 +190,11 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 		return "", err
 	}
 
+	// Encode the object key for filesystem storage
+	encodedKey := encodeObjectKey(key)
+
 	// Object path is now a directory
-	objectPath := filepath.Join(bucketPath, key)
+	objectPath := filepath.Join(bucketPath, filepath.FromSlash(encodedKey))
 
 	// Verify the path is within the bucket
 	absObjectPath, err := filepath.Abs(objectPath)
