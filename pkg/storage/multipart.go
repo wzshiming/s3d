@@ -125,17 +125,16 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		return "", err
 	}
 
-	srcDataPath := filepath.Join(srcObjectDir, dataFile)
+	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
 
-	// Check if source exists
-	srcFile, err := os.Open(srcDataPath)
+	// Load source metadata
+	srcMetadata, err := s.loadMetadata(srcMetaPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", ErrObjectNotFound
-		}
 		return "", err
 	}
-	defer srcFile.Close()
+	if srcMetadata == nil {
+		return "", ErrObjectNotFound
+	}
 
 	// Create temp file
 	tmpFile, err := os.CreateTemp(uploadDir, ".tmp-*")
@@ -148,7 +147,24 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
-	_, err = io.Copy(writer, srcFile)
+	// Copy data from source (either inline or from data file)
+	if len(srcMetadata.Data) > 0 {
+		// Data is inline
+		_, err = writer.Write(srcMetadata.Data)
+	} else {
+		// Data is in separate file
+		srcDataPath := filepath.Join(srcObjectDir, dataFile)
+		srcFile, err := os.Open(srcDataPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", ErrObjectNotFound
+			}
+			return "", err
+		}
+		defer srcFile.Close()
+		_, err = io.Copy(writer, srcFile)
+	}
+
 	if err != nil {
 		tmpFile.Close()
 		return "", err
