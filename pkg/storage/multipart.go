@@ -296,8 +296,14 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	// Get file info for size and mod time
+	// Get size from data file
 	dataFileInfo, err := os.Stat(dataPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +330,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		Key:         key,
 		Size:        dataFileInfo.Size(),
 		ETag:        etag,
-		ModTime:     dataFileInfo.ModTime(),
+		ModTime:     metaFileInfo.ModTime(),
 		ContentType: contentType,
 	}, nil
 }

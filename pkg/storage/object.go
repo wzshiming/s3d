@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // inlineDataReader wraps a bytes.Reader to implement io.ReadSeekCloser
@@ -82,27 +81,18 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		// Same content - compatible duplicate write, just return existing ObjectInfo
 		// No need to rewrite the object
 		// Note: tmpFile is already cleaned up by defer
-		var modTime time.Time
-		if len(existingMetadata.Data) > 0 {
-			// Data is inline - use meta file mod time
-			metaFileInfo, err := os.Stat(metaPath)
-			if err != nil {
-				return nil, err
-			}
-			modTime = metaFileInfo.ModTime()
-		} else {
-			// Data is in separate file - use data file mod time
-			dataFileInfo, err := os.Stat(dataPath)
-			if err != nil {
-				return nil, err
-			}
-			modTime = dataFileInfo.ModTime()
+		
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(metaPath)
+		if err != nil {
+			return nil, err
 		}
+		
 		return &ObjectInfo{
 			Key:         key,
 			Size:        fileInfo.Size(),
 			ETag:        etag,
-			ModTime:     modTime,
+			ModTime:     metaFileInfo.ModTime(),
 			ContentType: contentType,
 		}, nil
 	}
@@ -111,8 +101,6 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		ContentType: contentType,
 		ETag:        etag,
 	}
-
-	var modTime time.Time
 
 	// If file is small enough, embed it in metadata
 	if fileInfo.Size() <= inlineThreshold {
@@ -132,12 +120,6 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		if existingMetadata != nil && len(existingMetadata.Data) == 0 {
 			os.Remove(dataPath)
 		}
-		// Get mod time from meta file
-		metaFileInfo, err := os.Stat(metaPath)
-		if err != nil {
-			return nil, err
-		}
-		modTime = metaFileInfo.ModTime()
 	} else {
 		// Move temp file to data file for larger files
 		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
@@ -148,19 +130,19 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		if err := s.saveMetadata(metaPath, metadata); err != nil {
 			return nil, err
 		}
-		// Get mod time from data file
-		dataFileInfo, err := os.Stat(dataPath)
-		if err != nil {
-			return nil, err
-		}
-		modTime = dataFileInfo.ModTime()
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ObjectInfo{
 		Key:         key,
 		Size:        fileInfo.Size(),
 		ETag:        etag,
-		ModTime:     modTime,
+		ModTime:     metaFileInfo.ModTime(),
 		ContentType: contentType,
 	}, nil
 }
@@ -223,8 +205,15 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		return nil, nil, err
 	}
 
-	// Get file info
+	// Get file info for size
 	fileInfo, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
 	if err != nil {
 		file.Close()
 		return nil, nil, err
@@ -234,7 +223,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		Key:         key,
 		Size:        fileInfo.Size(),
 		ETag:        metadata.ETag,
-		ModTime:     fileInfo.ModTime(),
+		ModTime:     metaFileInfo.ModTime(),
 		ContentType: metadata.ContentType,
 	}
 
@@ -338,13 +327,11 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			metadata, _ := s.loadMetadata(path)
 
 			var size int64
-			var modTime time.Time
 
 			// Check if data is inline or in separate file
 			if metadata != nil && len(metadata.Data) > 0 {
 				// Data is inline
 				size = int64(len(metadata.Data))
-				modTime = info.ModTime()
 			} else {
 				// Data is in separate file
 				dataPath := filepath.Join(objectDir, dataFile)
@@ -353,14 +340,14 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 					return nil // Skip if data file doesn't exist
 				}
 				size = dataInfo.Size()
-				modTime = dataInfo.ModTime()
 			}
 
+			// Always use meta file's ModTime
 			objects = append(objects, ObjectInfo{
 				Key:         objectKey,
 				Size:        size,
 				ETag:        metadata.ETag,
-				ModTime:     modTime,
+				ModTime:     info.ModTime(),
 				ContentType: metadata.ContentType,
 			})
 		}
@@ -450,34 +437,33 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 	}
 
-	var size int64
-	var modTime time.Time
-
 	// Check compatibility: if destination exists with same ETag as source, it's a duplicate
 	// This is compatible and we can skip the copy operation
 	if existingDstMetadata != nil && existingDstMetadata.ETag == srcMetadata.ETag {
 		// Same content already at destination - compatible duplicate, skip copy
-		// Get size and modTime from existing destination
+		// Get size from existing destination
+		var size int64
 		if len(existingDstMetadata.Data) > 0 {
 			size = int64(len(existingDstMetadata.Data))
-			metaFileInfo, err := os.Stat(dstMetaPath)
-			if err != nil {
-				return nil, err
-			}
-			modTime = metaFileInfo.ModTime()
 		} else {
 			dataFileInfo, err := os.Stat(dstDataPath)
 			if err != nil {
 				return nil, err
 			}
 			size = dataFileInfo.Size()
-			modTime = dataFileInfo.ModTime()
 		}
+		
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(dstMetaPath)
+		if err != nil {
+			return nil, err
+		}
+		
 		return &ObjectInfo{
 			Key:         dstKey,
 			Size:        size,
 			ETag:        srcMetadata.ETag,
-			ModTime:     modTime,
+			ModTime:     metaFileInfo.ModTime(),
 			ContentType: contentType,
 		}, nil
 	}
@@ -501,11 +487,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			os.Remove(dstDataPath)
 		}
 
-		// Get mod time from meta file
+		// Always use meta file's ModTime
 		metaFileInfo, err := os.Stat(dstMetaPath)
 		if err != nil {
 			return nil, err
 		}
+		
 		return &ObjectInfo{
 			Key:         dstKey,
 			Size:        int64(len(srcMetadata.Data)),
@@ -558,8 +545,14 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		return nil, err
 	}
 
-	// Get size and mod time from data file
+	// Get size from data file
 	dataFileInfo, err := os.Stat(dstDataPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(dstMetaPath)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +561,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		Key:         dstKey,
 		Size:        dataFileInfo.Size(),
 		ETag:        etag,
-		ModTime:     dataFileInfo.ModTime(),
+		ModTime:     metaFileInfo.ModTime(),
 		ContentType: contentType,
 	}, nil
 }
