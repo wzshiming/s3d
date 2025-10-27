@@ -44,12 +44,12 @@ func createServer(cfg *Config) (http.Handler, error) {
 		return nil, err
 	}
 	s := server.NewS3Handler(store)
-	
+
 	// Wrap with path sanitization middleware
 	// This must be the outermost middleware to ensure paths are sanitized
 	// before any other processing
 	handler := middleware.NewPathSanitizer(s)
-	
+
 	if cfg.Credentials == "" {
 		return handler, nil
 	}
