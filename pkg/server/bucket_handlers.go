@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
@@ -9,10 +10,45 @@ import (
 
 // handleListBuckets handles ListBuckets operation
 func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	continuationToken := query.Get("continuation-token")
+	maxBuckets := 1000
+	if mb := query.Get("max-buckets"); mb != "" {
+		if parsed, err := strconv.Atoi(mb); err == nil && parsed > 0 {
+			maxBuckets = parsed
+		}
+	}
+
 	buckets, err := s.storage.ListBuckets()
 	if err != nil {
 		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Filter buckets based on continuation token
+	startIndex := 0
+	if continuationToken != "" {
+		for i, b := range buckets {
+			if b.Name > continuationToken {
+				startIndex = i
+				break
+			}
+		}
+	}
+
+	// Get buckets starting from the continuation point
+	filteredBuckets := buckets[startIndex:]
+
+	// Determine if results are truncated
+	isTruncated := len(filteredBuckets) > maxBuckets
+	var nextContinuationToken string
+	if isTruncated {
+		// Limit to maxBuckets
+		filteredBuckets = filteredBuckets[:maxBuckets]
+		// Set next continuation token to the last bucket name
+		if len(filteredBuckets) > 0 {
+			nextContinuationToken = filteredBuckets[len(filteredBuckets)-1].Name
+		}
 	}
 
 	result := s3types.ListAllMyBucketsResult{
@@ -20,9 +56,14 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 			ID:          "local-user",
 			DisplayName: "local-user",
 		},
+		IsTruncated: isTruncated,
 	}
 
-	for _, b := range buckets {
+	if isTruncated {
+		result.ContinuationToken = nextContinuationToken
+	}
+
+	for _, b := range filteredBuckets {
 		result.Buckets.Bucket = append(result.Buckets.Bucket, s3types.Bucket{
 			Name:         b.Name,
 			CreationDate: b.ModTime,
