@@ -124,8 +124,6 @@ func sanitizeObjectKey(key string) error {
 // This handles non-ASCII characters by URL encoding them to ensure
 // filesystem compatibility across different platforms
 func encodePathComponent(component string) string {
-	// URL encode the component, but preserve forward slashes for path separators
-	// We need to encode each path segment separately to preserve the directory structure
 	return url.PathEscape(component)
 }
 
