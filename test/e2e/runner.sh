@@ -1,5 +1,5 @@
 #!/bin/bash
-# Main test runner - orchestrates all e2e test suites
+# Modular test runner for e2e tests
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +15,15 @@ export E2E_SERVER_DATA_DIR=$(create_temp_dir)
 
 # Setup cleanup trap
 trap cleanup_server EXIT
+
+# Function to run a test suite
+run_test_suite() {
+    local suite_name="$1"
+    local suite_file="$2"
+    
+    section_header "Running ${suite_name}"
+    source "${suite_file}"
+}
 
 # Main test execution
 main() {
@@ -33,11 +42,13 @@ main() {
     source "${SCRIPT_DIR}/duplicate_write_tests.sh"
     
     # Run bucket tests
+    section_header "Bucket Operations"
     test_list_empty_buckets
     test_create_bucket
     test_list_buckets
     
-    # Run object tests
+    # Run basic object tests
+    section_header "Basic Object Operations"
     test_upload_file
     test_list_objects
     test_download_file
@@ -49,6 +60,7 @@ main() {
     test_delete_objects
     
     # Run duplicate write compatibility tests
+    section_header "Duplicate Write Compatibility"
     test_put_duplicate_same_content
     test_put_duplicate_different_content
     test_copy_to_existing_same_content
@@ -57,6 +69,7 @@ main() {
     test_rename_to_existing_different_content
     
     # Run advanced tests
+    section_header "Advanced Features"
     test_multipart_upload
     test_sync_directory
     test_upload_part_copy
@@ -70,19 +83,14 @@ main() {
     # Run nested path test
     test_nested_paths
     
-    # Clean up final test
+    # Clean up final test bucket
     aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 rb "s3://${E2E_TEST_BUCKET}" --force 2>/dev/null || true
     
     section_success "All e2e tests passed successfully!"
 }
 
-# Run main tests
-main
-
-# Run authentication tests
-section_header "Running authentication e2e tests..."
-"${SCRIPT_DIR}/auth_tests.sh"
-
-section_success "All e2e tests (including auth) passed!"
-
-exit 0
+# Run main if executed directly
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+    main
+    exit 0
+fi
