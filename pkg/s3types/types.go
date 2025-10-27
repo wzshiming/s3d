@@ -78,8 +78,8 @@ type InitiateMultipartUploadResult struct {
 	UploadId string   `xml:"UploadId"`
 }
 
-// Part represents a part in CompleteMultipartUpload request
-type Part struct {
+// Multipart represents a part in CompleteMultipartUpload request
+type Multipart struct {
 	PartNumber int    `xml:"PartNumber"`
 	ETag       string `xml:"ETag"`
 }
@@ -94,7 +94,7 @@ type CompletedPart struct {
 
 // CompleteMultipartUpload is the request for CompleteMultipartUpload operation
 type CompleteMultipartUpload struct {
-	Parts []Part `xml:"Part"`
+	Parts []Multipart `xml:"Part"`
 }
 
 // CompleteMultipartUploadResult is the response for CompleteMultipartUpload operation

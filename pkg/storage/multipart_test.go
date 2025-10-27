@@ -54,7 +54,7 @@ func TestMultipartUpload(t *testing.T) {
 	}
 
 	// Complete multipart upload
-	parts := []Part{
+	parts := []Multipart{
 		{PartNumber: 1, ETag: objInfo1.ETag},
 		{PartNumber: 2, ETag: objInfo2.ETag},
 	}
@@ -362,13 +362,13 @@ func TestCompleteWithWrongBucketKey(t *testing.T) {
 	}
 
 	// Try to complete with wrong bucket
-	_, err = store.CompleteMultipartUpload("bucket2", "key1.txt", uploadID, []Part{})
+	_, err = store.CompleteMultipartUpload("bucket2", "key1.txt", uploadID, []Multipart{})
 	if err != ErrInvalidUploadID {
 		t.Fatalf("Expected ErrInvalidUploadID for wrong bucket, got %v", err)
 	}
 
 	// Try to complete with wrong key
-	_, err = store.CompleteMultipartUpload("bucket1", "key2.txt", uploadID, []Part{})
+	_, err = store.CompleteMultipartUpload("bucket1", "key2.txt", uploadID, []Multipart{})
 	if err != ErrInvalidUploadID {
 		t.Fatalf("Expected ErrInvalidUploadID for wrong key, got %v", err)
 	}
@@ -409,7 +409,7 @@ func TestMultipartUploadPersistence(t *testing.T) {
 	}
 
 	// Complete upload should also work
-	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Part{{PartNumber: 1, ETag: objInfo.ETag}})
+	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Multipart{{PartNumber: 1, ETag: objInfo.ETag}})
 	if err != nil {
 		t.Fatalf("Complete should work after restart: %v", err)
 	}

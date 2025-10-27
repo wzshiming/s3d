@@ -44,7 +44,13 @@ type BucketInfo struct {
 	ModTime time.Time
 }
 
-// Part represents a part of a multipart upload
+// Multipart represents a part of a multipart upload
+type Multipart struct {
+	PartNumber int
+	ETag       string
+}
+
+// Part represents a stored part of list parts
 type Part struct {
 	PartNumber int
 	ETag       string

@@ -136,9 +136,14 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 	}
 
 	// Convert to storage parts
-	var parts []storage.Part
+	parts := make([]storage.Multipart, 0, len(req.Parts))
 	for _, p := range req.Parts {
-		parts = append(parts, storage.Part{
+		if len(parts) > 0 && parts[len(parts)-1].PartNumber+1 != p.PartNumber {
+			s.errorResponse(w, r, "InvalidPartOrder", "Parts are not in ascending order", http.StatusBadRequest)
+			return
+		}
+
+		parts = append(parts, storage.Multipart{
 			PartNumber: p.PartNumber,
 			ETag:       p.ETag,
 		})

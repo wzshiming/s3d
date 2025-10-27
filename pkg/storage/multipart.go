@@ -224,7 +224,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 }
 
 // CompleteMultipartUpload completes a multipart upload
-func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Part) (*ObjectInfo, error) {
+func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Multipart) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
