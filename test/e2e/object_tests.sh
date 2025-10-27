@@ -1,7 +1,8 @@
 #!/bin/bash
 # Tests for object operations
 
-source "$(dirname "$0")/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
 
 # Test 4: Upload a file
 test_upload_file() {

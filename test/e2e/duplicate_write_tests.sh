@@ -1,7 +1,8 @@
 #!/bin/bash
 # Tests for duplicate write compatibility
 
-source "$(dirname "$0")/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
 
 # Test: PutObject with same content twice
 test_put_duplicate_same_content() {
