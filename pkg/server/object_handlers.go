@@ -13,6 +13,15 @@ import (
 
 // handlePutObject handles PutObject operation
 func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	if r.Header.Get("x-amz-rename-source") != "" {
+		s.handleRenameObject(w, r, bucket, key)
+		return
+	}
+	if r.Header.Get("x-amz-copy-source") != "" {
+		s.handleCopyObject(w, r, bucket, key)
+		return
+	}
+
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"

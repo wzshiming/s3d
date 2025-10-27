@@ -40,48 +40,18 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key = parts[1]
 	}
 
-	// Check for multipart upload operations
 	query := r.URL.Query()
-
-	// List multipart uploads for a bucket
-	if query.Has("uploads") && key == "" {
-		s.handleListMultipartUploads(w, r, bucket)
-		return
-	}
-
-	// Initiate multipart upload
-	if query.Has("uploads") && key != "" {
-		s.handleInitiateMultipartUpload(w, r, bucket, key)
-		return
-	}
-
-	if uploadID := query.Get("uploadId"); uploadID != "" {
-		if partNumber := query.Get("partNumber"); partNumber != "" {
-			s.handleUploadPart(w, r, bucket, key, uploadID, partNumber)
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			s.handleListParts(w, r, bucket, key, uploadID)
-		case http.MethodPost:
-			s.handleCompleteMultipartUpload(w, r, bucket, key, uploadID)
-		case http.MethodDelete:
-			s.handleAbortMultipartUpload(w, r, bucket, key, uploadID)
-		default:
-			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
-		}
-		return
-	}
-
-	// Bucket operations
 	if key == "" {
 		switch r.Method {
 		case http.MethodPut:
 			s.handleCreateBucket(w, r, bucket)
 		case http.MethodGet:
-			s.handleListObjects(w, r, bucket)
+			if query.Has("uploads") {
+				s.handleListMultipartUploads(w, r, bucket)
+			} else {
+				s.handleListObjects(w, r, bucket)
+			}
 		case http.MethodPost:
-			// Check for delete query parameter (DeleteObjects operation)
 			if query.Has("delete") {
 				s.handleDeleteObjects(w, r, bucket)
 			} else {
@@ -94,26 +64,46 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 		}
-		return
-	}
-
-	// Object operations
-	switch r.Method {
-	case http.MethodPut:
-		// Check for rename operation (x-amz-rename-source header)
-		if r.Header.Get("x-amz-rename-source") != "" {
-			s.handleRenameObject(w, r, bucket, key)
-		} else if r.Header.Get("x-amz-copy-source") != "" {
-			// Check for copy operation (x-amz-copy-source header)
-			s.handleCopyObject(w, r, bucket, key)
-		} else {
-			s.handlePutObject(w, r, bucket, key)
+	} else {
+		switch r.Method {
+		case http.MethodPost:
+			if query.Has("uploads") {
+				s.handleInitiateMultipartUpload(w, r, bucket, key)
+			} else if query.Has("uploadId") {
+				uploadID := query.Get("uploadId")
+				s.handleCompleteMultipartUpload(w, r, bucket, key, uploadID)
+			} else {
+				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		case http.MethodPut:
+			if query.Has("uploadId") {
+				if partNumber := query.Get("partNumber"); partNumber != "" {
+					uploadID := query.Get("uploadId")
+					s.handleUploadPart(w, r, bucket, key, uploadID, partNumber)
+				} else {
+					s.errorResponse(w, r, "MissingParameter", "Missing partNumber parameter", http.StatusBadRequest)
+				}
+			} else {
+				s.handlePutObject(w, r, bucket, key)
+			}
+		case http.MethodGet:
+			if query.Has("uploadId") {
+				uploadID := query.Get("uploadId")
+				s.handleListParts(w, r, bucket, key, uploadID)
+			} else {
+				s.handleGetObject(w, r, bucket, key)
+			}
+		case http.MethodHead:
+			s.handleGetObject(w, r, bucket, key)
+		case http.MethodDelete:
+			if query.Has("uploadId") {
+				uploadID := query.Get("uploadId")
+				s.handleAbortMultipartUpload(w, r, bucket, key, uploadID)
+			} else {
+				s.handleDeleteObject(w, r, bucket, key)
+			}
+		default:
+			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	case http.MethodHead, http.MethodGet:
-		s.handleGetObject(w, r, bucket, key)
-	case http.MethodDelete:
-		s.handleDeleteObject(w, r, bucket, key)
-	default:
-		s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
