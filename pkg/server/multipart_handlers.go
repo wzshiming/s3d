@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
@@ -53,7 +52,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
-	etag, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
+	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -68,8 +67,8 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
-	w.Header().Set("ETag", fmt.Sprintf("%q", etag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(etag))
+	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -103,7 +102,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Perform copy to part
-	etag, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey)
+	objInfo, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -121,8 +120,8 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	}
 
 	result := s3types.CopyPartResult{
-		LastModified: time.Now().UTC(),
-		ETag:         fmt.Sprintf("%q", etag),
+		LastModified: objInfo.ModTime.UTC(),
+		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
 	s.xmlResponse(w, result, http.StatusOK)
@@ -145,7 +144,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		})
 	}
 
-	etag, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts)
+	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -162,7 +161,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		Location: fmt.Sprintf("/%s/%s", bucket, key),
 		Bucket:   bucket,
 		Key:      key,
-		ETag:     fmt.Sprintf("%q", etag),
+		ETag:     fmt.Sprintf("%q", objInfo.ETag),
 	}
 
 	s.xmlResponse(w, result, http.StatusOK)

@@ -31,12 +31,12 @@ func TestObjectOperations(t *testing.T) {
 	}
 
 	// Put object
-	etag, err := store.PutObject(bucketName, objectKey, bytes.NewReader([]byte(objectContent)), "text/plain")
+	objInfo, err := store.PutObject(bucketName, objectKey, bytes.NewReader([]byte(objectContent)), "text/plain")
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
 
-	if etag == "" {
+	if objInfo.ETag == "" {
 		t.Fatal("ETag should not be empty")
 	}
 
@@ -168,12 +168,12 @@ func TestCopyObject(t *testing.T) {
 	}
 
 	// Copy object
-	etag, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	objInfo, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
 
-	if etag == "" {
+	if objInfo.ETag == "" {
 		t.Fatal("ETag should not be empty")
 	}
 
@@ -434,7 +434,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	smallKey := "small.txt"
 	smallContent := bytes.Repeat([]byte("x"), 100) // 100 bytes - well under threshold
 
-	etag1, err := store.PutObject(bucketName, smallKey, bytes.NewReader(smallContent), "text/plain")
+	objInfo1, err := store.PutObject(bucketName, smallKey, bytes.NewReader(smallContent), "text/plain")
 	if err != nil {
 		t.Fatalf("PutObject for small file failed: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 		t.Errorf("Size mismatch: expected %d, got %d", len(smallContent), info1.Size)
 	}
 
-	if info1.ETag != etag1 {
+	if info1.ETag != objInfo1.ETag {
 		t.Error("ETag mismatch for small file")
 	}
 
@@ -480,7 +480,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	largeKey := "large.txt"
 	largeContent := bytes.Repeat([]byte("y"), 5000) // 5000 bytes - over threshold
 
-	etag2, err := store.PutObject(bucketName, largeKey, bytes.NewReader(largeContent), "text/plain")
+	objInfo2, err := store.PutObject(bucketName, largeKey, bytes.NewReader(largeContent), "text/plain")
 	if err != nil {
 		t.Fatalf("PutObject for large file failed: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 		t.Errorf("Size mismatch: expected %d, got %d", len(largeContent), info2.Size)
 	}
 
-	if info2.ETag != etag2 {
+	if info2.ETag != objInfo2.ETag {
 		t.Error("ETag mismatch for large file")
 	}
 
@@ -549,7 +549,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 
 	// Test 4: Copy small file should maintain inline storage
 	copiedKey := "copied-small.txt"
-	etagCopy, err := store.CopyObject(bucketName, smallKey, bucketName, copiedKey)
+	objInfoCopy, err := store.CopyObject(bucketName, smallKey, bucketName, copiedKey)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 		t.Error("Copied content doesn't match original")
 	}
 
-	if etagCopy != etag1 {
+	if objInfoCopy.ETag != objInfo1.ETag {
 		t.Error("ETag should be preserved when copying")
 	}
 
@@ -671,20 +671,20 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		content := bytes.Repeat([]byte("test"), 100)
 
 		// First put
-		etag1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
 		if err != nil {
 			t.Fatalf("First PutObject failed: %v", err)
 		}
 
 		// Second put with same content - should be compatible
-		etag2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
 		if err != nil {
 			t.Fatalf("Second PutObject with same content failed: %v", err)
 		}
 
 		// ETags should be the same
-		if etag1 != etag2 {
-			t.Errorf("Expected same ETag for same content, got %s and %s", etag1, etag2)
+		if objInfo1.ETag != objInfo2.ETag {
+			t.Errorf("Expected same ETag for same content, got %s and %s", objInfo1.ETag, objInfo2.ETag)
 		}
 
 		// Verify object still exists and has correct content
@@ -698,7 +698,7 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		if !bytes.Equal(data, content) {
 			t.Error("Content doesn't match original")
 		}
-		if info.ETag != etag1 {
+		if info.ETag != objInfo1.ETag {
 			t.Error("ETag doesn't match")
 		}
 	})
@@ -710,19 +710,19 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		content2 := []byte("second content different")
 
 		// First put
-		etag1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content1), "text/plain")
+		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content1), "text/plain")
 		if err != nil {
 			t.Fatalf("First PutObject failed: %v", err)
 		}
 
 		// Second put with different content - should overwrite
-		etag2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content2), "text/plain")
+		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content2), "text/plain")
 		if err != nil {
 			t.Fatalf("Second PutObject with different content failed: %v", err)
 		}
 
 		// ETags should be different
-		if etag1 == etag2 {
+		if objInfo1.ETag == objInfo2.ETag {
 			t.Errorf("Expected different ETags for different content")
 		}
 
@@ -737,7 +737,7 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		if !bytes.Equal(data, content2) {
 			t.Error("Content should be updated to second version")
 		}
-		if info.ETag != etag2 {
+		if info.ETag != objInfo2.ETag {
 			t.Error("ETag should be from second version")
 		}
 	})
@@ -781,12 +781,12 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		}
 
 		// Copy - should detect same content and be compatible
-		etag, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
 		if err != nil {
 			t.Fatalf("CopyObject to existing destination with same content failed: %v", err)
 		}
 
-		if etag == "" {
+		if objInfo.ETag == "" {
 			t.Error("ETag should not be empty")
 		}
 
@@ -823,12 +823,12 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		}
 
 		// Copy - should overwrite destination
-		etag, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
 		if err != nil {
 			t.Fatalf("CopyObject failed: %v", err)
 		}
 
-		if etag == "" {
+		if objInfo.ETag == "" {
 			t.Error("ETag should not be empty")
 		}
 

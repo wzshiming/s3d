@@ -43,28 +43,28 @@ func TestMultipartUpload(t *testing.T) {
 	part1Content := "Part 1 content"
 	part2Content := "Part 2 content"
 
-	etag1, err := store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte(part1Content)))
+	objInfo1, err := store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte(part1Content)))
 	if err != nil {
 		t.Fatalf("UploadPart 1 failed: %v", err)
 	}
 
-	etag2, err := store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte(part2Content)))
+	objInfo2, err := store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte(part2Content)))
 	if err != nil {
 		t.Fatalf("UploadPart 2 failed: %v", err)
 	}
 
 	// Complete multipart upload
 	parts := []Part{
-		{PartNumber: 1, ETag: etag1},
-		{PartNumber: 2, ETag: etag2},
+		{PartNumber: 1, ETag: objInfo1.ETag},
+		{PartNumber: 2, ETag: objInfo2.ETag},
 	}
 
-	finalETag, err := store.CompleteMultipartUpload(bucketName, objectKey, uploadID, parts)
+	finalObjInfo, err := store.CompleteMultipartUpload(bucketName, objectKey, uploadID, parts)
 	if err != nil {
 		t.Fatalf("CompleteMultipartUpload failed: %v", err)
 	}
 
-	if finalETag == "" {
+	if finalObjInfo.ETag == "" {
 		t.Fatal("Final ETag should not be empty")
 	}
 
@@ -403,13 +403,13 @@ func TestMultipartUploadPersistence(t *testing.T) {
 	}
 
 	// Upload part with the new store - should work if persistence works
-	etag, err := store2.UploadPart("test-bucket", "key.txt", uploadID, 1, bytes.NewReader([]byte("test data")))
+	objInfo, err := store2.UploadPart("test-bucket", "key.txt", uploadID, 1, bytes.NewReader([]byte("test data")))
 	if err != nil {
 		t.Fatalf("Upload should work after restart: %v", err)
 	}
 
 	// Complete upload should also work
-	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Part{{PartNumber: 1, ETag: etag}})
+	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Part{{PartNumber: 1, ETag: objInfo.ETag}})
 	if err != nil {
 		t.Fatalf("Complete should work after restart: %v", err)
 	}

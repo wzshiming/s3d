@@ -53,25 +53,25 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string
 }
 
 // UploadPart uploads a part of a multipart upload
-func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader) (string, error) {
+func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	if partNumber < 1 || partNumber > 10000 {
-		return "", ErrInvalidPartNumber
+		return nil, ErrInvalidPartNumber
 	}
 
 	// Check filesystem for upload directory
 	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		return "", ErrInvalidUploadID
+		return nil, ErrInvalidUploadID
 	}
 
 	// Create temp file
 	tmpFile, err := s.tempFile()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
@@ -82,7 +82,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	_, err = io.Copy(writer, data)
 	if err != nil {
 		tmpFile.Close()
-		return "", err
+		return nil, err
 	}
 	tmpFile.Close()
 
@@ -92,37 +92,57 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 
 	// Move temp file to part file
 	if err := os.Rename(tmpFile.Name(), partPath); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return etag, nil
+	// Get file info for size and mod time
+	partFileInfo, err := os.Stat(partPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load upload metadata for content type
+	uploadMetaPath := filepath.Join(uploadDir, metaFile)
+	metadata, _ := s.loadMetadata(uploadMetaPath)
+	contentType := "application/octet-stream"
+	if metadata != nil && metadata.ContentType != "" {
+		contentType = metadata.ContentType
+	}
+
+	return &ObjectInfo{
+		Key:         key,
+		Size:        partFileInfo.Size(),
+		ETag:        etag,
+		ModTime:     partFileInfo.ModTime(),
+		ContentType: contentType,
+	}, nil
 }
 
 // UploadPartCopy uploads a part of a multipart upload by copying from an existing object
-func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, srcBucket, srcKey string) (string, error) {
+func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, srcBucket, srcKey string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	if partNumber < 1 || partNumber > 10000 {
-		return "", ErrInvalidPartNumber
+		return nil, ErrInvalidPartNumber
 	}
 
 	// Check filesystem for upload directory
 	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		return "", ErrInvalidUploadID
+		return nil, ErrInvalidUploadID
 	}
 
 	// Verify source bucket exists
 	if !s.BucketExists(srcBucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	// Get source object directory
 	srcObjectDir, err := s.safePath(srcBucket, srcKey)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
@@ -130,16 +150,16 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	// Load source metadata
 	srcMetadata, err := s.loadMetadata(srcMetaPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if srcMetadata == nil {
-		return "", ErrObjectNotFound
+		return nil, ErrObjectNotFound
 	}
 
 	// Create temp file
 	tmpFile, err := s.tempFile()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
@@ -157,9 +177,9 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		srcFile, err := os.Open(srcDataPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return "", ErrObjectNotFound
+				return nil, ErrObjectNotFound
 			}
-			return "", err
+			return nil, err
 		}
 		defer srcFile.Close()
 		_, err = io.Copy(writer, srcFile)
@@ -167,7 +187,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 
 	if err != nil {
 		tmpFile.Close()
-		return "", err
+		return nil, err
 	}
 	tmpFile.Close()
 
@@ -177,27 +197,47 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 
 	// Move temp file to part file
 	if err := os.Rename(tmpFile.Name(), partPath); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return etag, nil
+	// Get file info for size and mod time
+	partFileInfo, err := os.Stat(partPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load upload metadata for content type
+	uploadMetaPath := filepath.Join(uploadDir, metaFile)
+	metadata, _ := s.loadMetadata(uploadMetaPath)
+	contentType := "application/octet-stream"
+	if metadata != nil && metadata.ContentType != "" {
+		contentType = metadata.ContentType
+	}
+
+	return &ObjectInfo{
+		Key:         key,
+		Size:        partFileInfo.Size(),
+		ETag:        etag,
+		ModTime:     partFileInfo.ModTime(),
+		ContentType: contentType,
+	}, nil
 }
 
 // CompleteMultipartUpload completes a multipart upload
-func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Part) (string, error) {
+func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Part) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	// Check filesystem for upload directory if not in memory
 	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		return "", ErrInvalidUploadID
+		return nil, ErrInvalidUploadID
 	}
 
 	objectDir, err := s.safePath(bucket, key)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	dataPath := filepath.Join(objectDir, dataFile)
@@ -205,13 +245,13 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	// Create object directory
 	if err := os.MkdirAll(objectDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Create temp file for final object
 	tmpFile, err := s.tempFile()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
@@ -225,13 +265,13 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		partFile, err := os.Open(partPath)
 		if err != nil {
 			tmpFile.Close()
-			return "", err
+			return nil, err
 		}
 
 		if _, err := io.Copy(io.MultiWriter(tmpFile, hash), partFile); err != nil {
 			partFile.Close()
 			tmpFile.Close()
-			return "", err
+			return nil, err
 		}
 		partFile.Close()
 	}
@@ -239,7 +279,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	// Move temp file to final location
 	if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Store metadata - use URL-safe base64 encoded SHA256
@@ -248,12 +288,29 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata, err := s.loadMetadata(uploadMetaPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	metadata.ETag = etag
 	if err := s.saveMetadata(metaPath, metadata); err != nil {
-		return "", err
+		return nil, err
+	}
+
+	// Get size from data file
+	dataFileInfo, err := os.Stat(dataPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	contentType := metadata.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
 	}
 
 	// Get the uploads base directory as the stop point
@@ -263,13 +320,19 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	parentDir := filepath.Dir(uploadDir)
 
 	if err := os.RemoveAll(uploadDir); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Clean up empty parent directories
 	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
-	return etag, nil
+	return &ObjectInfo{
+		Key:         key,
+		Size:        dataFileInfo.Size(),
+		ETag:        etag,
+		ModTime:     metaFileInfo.ModTime(),
+		ContentType: contentType,
+	}, nil
 }
 
 // AbortMultipartUpload aborts a multipart upload

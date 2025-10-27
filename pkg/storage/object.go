@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // inlineDataReader wraps a bytes.Reader to implement io.ReadSeekCloser
@@ -23,19 +22,19 @@ func (r *inlineDataReader) Close() error {
 }
 
 // PutObject stores an object
-func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType string) (string, error) {
+func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	objectDir, err := s.safePath(bucket, key)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Create object directory
 	if err := os.MkdirAll(objectDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	dataPath := filepath.Join(objectDir, dataFile)
@@ -54,7 +53,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	// Create temp file in the object directory
 	tmpFile, err := s.tempFile()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
@@ -64,14 +63,14 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 
 	if _, err := io.Copy(writer, data); err != nil {
 		tmpFile.Close()
-		return "", err
+		return nil, err
 	}
 	tmpFile.Close()
 
 	// Check file size to determine if it should be inlined
 	fileInfo, err := os.Stat(tmpFile.Name())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
@@ -79,10 +78,23 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	// Check compatibility: if object exists with same ETag, it's a duplicate write
 	// This is compatible and we can proceed without issue (S3 behavior)
 	if existingMetadata != nil && existingMetadata.ETag == etag {
-		// Same content - compatible duplicate write, just return existing ETag
+		// Same content - compatible duplicate write, just return existing ObjectInfo
 		// No need to rewrite the object
 		// Note: tmpFile is already cleaned up by defer
-		return etag, nil
+		
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(metaPath)
+		if err != nil {
+			return nil, err
+		}
+		
+		return &ObjectInfo{
+			Key:         key,
+			Size:        fileInfo.Size(),
+			ETag:        etag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: contentType,
+		}, nil
 	}
 
 	metadata := &Metadata{
@@ -95,13 +107,13 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		// Read the file content
 		fileData, err := os.ReadFile(tmpFile.Name())
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		metadata.Data = fileData
 
 		// Save metadata with inline data
 		if err := s.saveMetadata(metaPath, metadata); err != nil {
-			return "", err
+			return nil, err
 		}
 		// No need to create a separate data file
 		// If there was an old data file (object was previously large), clean it up
@@ -111,16 +123,28 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	} else {
 		// Move temp file to data file for larger files
 		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
-			return "", err
+			return nil, err
 		}
 
 		// Store metadata without inline data
 		if err := s.saveMetadata(metaPath, metadata); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	return etag, nil
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ObjectInfo{
+		Key:         key,
+		Size:        fileInfo.Size(),
+		ETag:        etag,
+		ModTime:     metaFileInfo.ModTime(),
+		ContentType: contentType,
+	}, nil
 }
 
 // GetObject retrieves an object
@@ -181,8 +205,15 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		return nil, nil, err
 	}
 
-	// Get file info
+	// Get file info for size
 	fileInfo, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(metaPath)
 	if err != nil {
 		file.Close()
 		return nil, nil, err
@@ -192,7 +223,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		Key:         key,
 		Size:        fileInfo.Size(),
 		ETag:        metadata.ETag,
-		ModTime:     fileInfo.ModTime(),
+		ModTime:     metaFileInfo.ModTime(),
 		ContentType: metadata.ContentType,
 	}
 
@@ -296,13 +327,11 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			metadata, _ := s.loadMetadata(path)
 
 			var size int64
-			var modTime time.Time
 
 			// Check if data is inline or in separate file
 			if metadata != nil && len(metadata.Data) > 0 {
 				// Data is inline
 				size = int64(len(metadata.Data))
-				modTime = info.ModTime()
 			} else {
 				// Data is in separate file
 				dataPath := filepath.Join(objectDir, dataFile)
@@ -311,14 +340,14 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 					return nil // Skip if data file doesn't exist
 				}
 				size = dataInfo.Size()
-				modTime = dataInfo.ModTime()
 			}
 
+			// Always use meta file's ModTime
 			objects = append(objects, ObjectInfo{
 				Key:         objectKey,
 				Size:        size,
 				ETag:        metadata.ETag,
-				ModTime:     modTime,
+				ModTime:     info.ModTime(),
 				ContentType: metadata.ContentType,
 			})
 		}
@@ -351,21 +380,21 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 }
 
 // CopyObject copies an object from one location to another
-func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (string, error) {
+func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*ObjectInfo, error) {
 	// Verify source bucket exists
 	if !s.BucketExists(srcBucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	// Verify destination bucket exists
 	if !s.BucketExists(dstBucket) {
-		return "", ErrBucketNotFound
+		return nil, ErrBucketNotFound
 	}
 
 	// Get source object directory
 	srcObjectDir, err := s.safePath(srcBucket, srcKey)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
@@ -373,10 +402,10 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// Load source metadata
 	srcMetadata, err := s.loadMetadata(srcMetaPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if srcMetadata == nil {
-		return "", ErrObjectNotFound
+		return nil, ErrObjectNotFound
 	}
 
 	contentType := srcMetadata.ContentType
@@ -387,12 +416,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// Get destination object directory
 	dstObjectDir, err := s.safePath(dstBucket, dstKey)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Create destination object directory
 	if err := os.MkdirAll(dstObjectDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	dstMetaPath := filepath.Join(dstObjectDir, metaFile)
@@ -412,7 +441,31 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	// This is compatible and we can skip the copy operation
 	if existingDstMetadata != nil && existingDstMetadata.ETag == srcMetadata.ETag {
 		// Same content already at destination - compatible duplicate, skip copy
-		return srcMetadata.ETag, nil
+		// Get size from existing destination
+		var size int64
+		if len(existingDstMetadata.Data) > 0 {
+			size = int64(len(existingDstMetadata.Data))
+		} else {
+			dataFileInfo, err := os.Stat(dstDataPath)
+			if err != nil {
+				return nil, err
+			}
+			size = dataFileInfo.Size()
+		}
+		
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(dstMetaPath)
+		if err != nil {
+			return nil, err
+		}
+		
+		return &ObjectInfo{
+			Key:         dstKey,
+			Size:        size,
+			ETag:        srcMetadata.ETag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: contentType,
+		}, nil
 	}
 
 	// Check if source data is inline
@@ -426,7 +479,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		copy(dstMetadata.Data, srcMetadata.Data)
 
 		if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
-			return "", err
+			return nil, err
 		}
 
 		// If destination previously had separate data file, clean it up
@@ -434,7 +487,19 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 			os.Remove(dstDataPath)
 		}
 
-		return srcMetadata.ETag, nil
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(dstMetaPath)
+		if err != nil {
+			return nil, err
+		}
+		
+		return &ObjectInfo{
+			Key:         dstKey,
+			Size:        int64(len(srcMetadata.Data)),
+			ETag:        srcMetadata.ETag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: contentType,
+		}, nil
 	}
 
 	// Data is in separate file
@@ -442,16 +507,16 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	srcFile, err := os.Open(srcDataPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", ErrObjectNotFound
+			return nil, ErrObjectNotFound
 		}
-		return "", err
+		return nil, err
 	}
 	defer srcFile.Close()
 
 	// Create temp file for destination
 	tmpFile, err := s.tempFile()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
@@ -461,13 +526,13 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 
 	if _, err := io.Copy(writer, srcFile); err != nil {
 		tmpFile.Close()
-		return "", err
+		return nil, err
 	}
 	tmpFile.Close()
 
 	// Move temp file to final location
 	if err := os.Rename(tmpFile.Name(), dstDataPath); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Store metadata - use URL-safe base64 encoded SHA256
@@ -477,10 +542,28 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		ETag:        etag,
 	}
 	if err := s.saveMetadata(dstMetaPath, dstMetadata); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return etag, nil
+	// Get size from data file
+	dataFileInfo, err := os.Stat(dstDataPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(dstMetaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ObjectInfo{
+		Key:         dstKey,
+		Size:        dataFileInfo.Size(),
+		ETag:        etag,
+		ModTime:     metaFileInfo.ModTime(),
+		ContentType: contentType,
+	}, nil
 }
 
 // RenameObject renames an object within the same bucket

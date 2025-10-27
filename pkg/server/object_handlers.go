@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
@@ -19,7 +18,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		contentType = "application/octet-stream"
 	}
 
-	etag, err := s.storage.PutObject(bucket, key, r.Body, contentType)
+	objInfo, err := s.storage.PutObject(bucket, key, r.Body, contentType)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -29,8 +28,8 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
-	w.Header().Set("ETag", fmt.Sprintf("%q", etag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(etag))
+	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -136,7 +135,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	srcKey := parts[1]
 
 	// Perform copy
-	etag, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -150,8 +149,8 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	}
 
 	result := s3types.CopyObjectResult{
-		LastModified: time.Now().UTC(),
-		ETag:         fmt.Sprintf("%q", etag),
+		LastModified: objInfo.ModTime.UTC(),
+		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
 	s.xmlResponse(w, result, http.StatusOK)
