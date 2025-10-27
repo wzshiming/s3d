@@ -124,6 +124,124 @@ test_rename_object() {
     aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rm s3://${TEST_BUCKET}/renamed-test.txt
 }
 
+# Test 12: Delete multiple objects (DeleteObjects API)
+test_delete_objects() {
+    echo -e "\n${YELLOW}Test: Delete multiple objects (DeleteObjects API)${NC}"
+    
+    # Create test objects for batch deletion
+    for i in {1..5}; do
+        echo "Content for batch delete test $i" > "${TEST_DATA_DIR}/batch-delete-${i}.txt"
+        aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/batch-delete-${i}.txt" s3://${TEST_BUCKET}/batch-delete-${i}.txt
+    done
+    
+    # Verify objects are created
+    OBJECT_COUNT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -c "batch-delete-" || true)
+    if [ "$OBJECT_COUNT" -ne 5 ]; then
+        echo -e "${RED}✗ Expected 5 objects created, found ${OBJECT_COUNT}${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ 5 test objects created${NC}"
+    
+    # Delete multiple objects using delete-objects command
+    # Create a JSON file with the objects to delete
+    cat > "${TEST_DATA_DIR}/delete-objects.json" << 'EOF'
+{
+  "Objects": [
+    {"Key": "batch-delete-1.txt"},
+    {"Key": "batch-delete-2.txt"},
+    {"Key": "batch-delete-3.txt"}
+  ],
+  "Quiet": false
+}
+EOF
+    
+    # Execute batch delete
+    DELETE_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api delete-objects \
+        --bucket ${TEST_BUCKET} \
+        --delete file://"${TEST_DATA_DIR}/delete-objects.json" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Batch delete failed${NC}"
+        echo "$DELETE_OUTPUT"
+        exit 1
+    fi
+    
+    # Verify the deleted objects are no longer present
+    DELETED_COUNT=0
+    for i in {1..3}; do
+        if ! aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "batch-delete-${i}.txt"; then
+            DELETED_COUNT=$((DELETED_COUNT + 1))
+        fi
+    done
+    
+    if [ "$DELETED_COUNT" -ne 3 ]; then
+        echo -e "${RED}✗ Expected 3 objects deleted, only ${DELETED_COUNT} were deleted${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ 3 objects deleted successfully${NC}"
+    
+    # Verify remaining objects still exist
+    REMAINING_COUNT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -c "batch-delete-" || true)
+    if [ "$REMAINING_COUNT" -ne 2 ]; then
+        echo -e "${RED}✗ Expected 2 objects remaining, found ${REMAINING_COUNT}${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ 2 objects remain as expected${NC}"
+    
+    # Test quiet mode
+    cat > "${TEST_DATA_DIR}/delete-objects-quiet.json" << 'EOF'
+{
+  "Objects": [
+    {"Key": "batch-delete-4.txt"},
+    {"Key": "batch-delete-5.txt"}
+  ],
+  "Quiet": true
+}
+EOF
+    
+    DELETE_OUTPUT_QUIET=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api delete-objects \
+        --bucket ${TEST_BUCKET} \
+        --delete file://"${TEST_DATA_DIR}/delete-objects-quiet.json" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Batch delete with quiet mode failed${NC}"
+        echo "$DELETE_OUTPUT_QUIET"
+        exit 1
+    fi
+    
+    # Verify all batch-delete objects are now gone
+    FINAL_COUNT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -c "batch-delete-" || true)
+    if [ "$FINAL_COUNT" -ne 0 ]; then
+        echo -e "${RED}✗ Expected 0 batch-delete objects remaining, found ${FINAL_COUNT}${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Quiet mode delete successful${NC}"
+    
+    # Test deleting non-existent objects (should succeed per S3 semantics)
+    cat > "${TEST_DATA_DIR}/delete-nonexistent.json" << 'EOF'
+{
+  "Objects": [
+    {"Key": "nonexistent-1.txt"},
+    {"Key": "nonexistent-2.txt"}
+  ],
+  "Quiet": false
+}
+EOF
+    
+    DELETE_OUTPUT_NONEXIST=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api delete-objects \
+        --bucket ${TEST_BUCKET} \
+        --delete file://"${TEST_DATA_DIR}/delete-nonexistent.json" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Delete non-existent objects failed${NC}"
+        echo "$DELETE_OUTPUT_NONEXIST"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Deleting non-existent objects succeeded (as expected)${NC}"
+    
+    echo -e "${GREEN}✓ DeleteObjects API test completed successfully${NC}"
+}
+
 # Test 13: Remove all objects
 test_remove_all_objects() {
     echo -e "\n${YELLOW}Test: Remove all objects${NC}"
