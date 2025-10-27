@@ -164,22 +164,22 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 	return objectPath, nil
 }
 
-// ObjectMetadata represents object metadata
-type ObjectMetadata struct {
+// objectMetadata represents object metadata
+type objectMetadata struct {
 	ContentType string
 	ETag        string
-	// Data stores the file content inline for small files (<=256 bytes)
+	// Data stores the file content inline for small files (<=4096 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
 	Data []byte
 }
 
-// UploadMetadata represents multipart upload metadata
-type UploadMetadata struct {
+// uploadMetadata represents multipart upload metadata
+type uploadMetadata struct {
 	ContentType string
 }
 
 // saveObjectMetadata saves object metadata
-func (s *Storage) saveObjectMetadata(path string, metadata *ObjectMetadata) error {
+func saveObjectMetadata(path string, metadata *objectMetadata) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -191,7 +191,7 @@ func (s *Storage) saveObjectMetadata(path string, metadata *ObjectMetadata) erro
 }
 
 // loadObjectMetadata loads object metadata
-func (s *Storage) loadObjectMetadata(path string) (*ObjectMetadata, error) {
+func loadObjectMetadata(path string) (*objectMetadata, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -201,7 +201,7 @@ func (s *Storage) loadObjectMetadata(path string) (*ObjectMetadata, error) {
 	}
 	defer file.Close()
 
-	var metadata ObjectMetadata
+	var metadata objectMetadata
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err
@@ -210,7 +210,7 @@ func (s *Storage) loadObjectMetadata(path string) (*ObjectMetadata, error) {
 }
 
 // saveUploadMetadata saves upload metadata
-func (s *Storage) saveUploadMetadata(path string, metadata *UploadMetadata) error {
+func saveUploadMetadata(path string, metadata *uploadMetadata) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func (s *Storage) saveUploadMetadata(path string, metadata *UploadMetadata) erro
 }
 
 // loadUploadMetadata loads upload metadata
-func (s *Storage) loadUploadMetadata(path string) (*UploadMetadata, error) {
+func loadUploadMetadata(path string) (*uploadMetadata, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -232,7 +232,7 @@ func (s *Storage) loadUploadMetadata(path string) (*UploadMetadata, error) {
 	}
 	defer file.Close()
 
-	var metadata UploadMetadata
+	var metadata uploadMetadata
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err
