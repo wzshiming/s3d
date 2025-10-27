@@ -925,3 +925,184 @@ func TestListObjectsV1Pagination(t *testing.T) {
 		}
 	})
 }
+
+func TestDeleteObjects(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-delete-objects"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Create test objects
+	testObjects := []string{"obj1.txt", "obj2.txt", "obj3.txt", "obj4.txt", "obj5.txt"}
+	for _, key := range testObjects {
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader("test content"),
+		})
+		if err != nil {
+			t.Fatalf("PutObject %s failed: %v", key, err)
+		}
+	}
+
+	// Test DeleteObjects - delete multiple objects
+	t.Run("DeleteMultipleObjects", func(t *testing.T) {
+		objectsToDelete := []types.ObjectIdentifier{
+			{Key: aws.String("obj1.txt")},
+			{Key: aws.String("obj2.txt")},
+			{Key: aws.String("obj3.txt")},
+		}
+
+		output, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucketName),
+			Delete: &types.Delete{
+				Objects: objectsToDelete,
+			},
+		})
+		if err != nil {
+			t.Fatalf("DeleteObjects failed: %v", err)
+		}
+
+		// Verify deleted objects are returned
+		if len(output.Deleted) != 3 {
+			t.Errorf("Expected 3 deleted objects, got %d", len(output.Deleted))
+		}
+
+		// Verify no errors
+		if len(output.Errors) != 0 {
+			t.Errorf("Expected no errors, got %d", len(output.Errors))
+		}
+
+		// Verify objects are actually deleted
+		for _, obj := range objectsToDelete {
+			_, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    obj.Key,
+			})
+			if err == nil {
+				t.Errorf("Object %s should have been deleted", *obj.Key)
+			}
+		}
+	})
+
+	// Test DeleteObjects with quiet mode
+	t.Run("DeleteObjectsQuietMode", func(t *testing.T) {
+		objectsToDelete := []types.ObjectIdentifier{
+			{Key: aws.String("obj4.txt")},
+		}
+
+		output, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucketName),
+			Delete: &types.Delete{
+				Objects: objectsToDelete,
+				Quiet:   aws.Bool(true),
+			},
+		})
+		if err != nil {
+			t.Fatalf("DeleteObjects with quiet mode failed: %v", err)
+		}
+
+		// In quiet mode, deleted objects should not be returned
+		if len(output.Deleted) != 0 {
+			t.Errorf("Expected 0 deleted objects in quiet mode, got %d", len(output.Deleted))
+		}
+
+		// Verify no errors
+		if len(output.Errors) != 0 {
+			t.Errorf("Expected no errors, got %d", len(output.Errors))
+		}
+
+		// Verify object is actually deleted
+		_, err = ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("obj4.txt"),
+		})
+		if err == nil {
+			t.Errorf("Object obj4.txt should have been deleted")
+		}
+	})
+
+	// Test DeleteObjects with non-existent objects
+	t.Run("DeleteNonexistentObjects", func(t *testing.T) {
+		objectsToDelete := []types.ObjectIdentifier{
+			{Key: aws.String("nonexistent1.txt")},
+			{Key: aws.String("nonexistent2.txt")},
+		}
+
+		output, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucketName),
+			Delete: &types.Delete{
+				Objects: objectsToDelete,
+			},
+		})
+		if err != nil {
+			t.Fatalf("DeleteObjects with nonexistent objects failed: %v", err)
+		}
+
+		// S3 treats deleting nonexistent objects as success
+		if len(output.Deleted) != 2 {
+			t.Errorf("Expected 2 deleted objects, got %d", len(output.Deleted))
+		}
+
+		// Verify no errors
+		if len(output.Errors) != 0 {
+			t.Errorf("Expected no errors, got %d", len(output.Errors))
+		}
+	})
+
+	// Test DeleteObjects with mixed existing and non-existing objects
+	t.Run("DeleteMixedObjects", func(t *testing.T) {
+		objectsToDelete := []types.ObjectIdentifier{
+			{Key: aws.String("obj5.txt")},           // exists
+			{Key: aws.String("nonexistent3.txt")},   // doesn't exist
+		}
+
+		output, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucketName),
+			Delete: &types.Delete{
+				Objects: objectsToDelete,
+			},
+		})
+		if err != nil {
+			t.Fatalf("DeleteObjects with mixed objects failed: %v", err)
+		}
+
+		// Both should be in deleted list
+		if len(output.Deleted) != 2 {
+			t.Errorf("Expected 2 deleted objects, got %d", len(output.Deleted))
+		}
+
+		// Verify no errors
+		if len(output.Errors) != 0 {
+			t.Errorf("Expected no errors, got %d", len(output.Errors))
+		}
+	})
+
+	// Test DeleteObjects with invalid bucket
+	t.Run("DeleteObjectsInvalidBucket", func(t *testing.T) {
+		objectsToDelete := []types.ObjectIdentifier{
+			{Key: aws.String("obj1.txt")},
+		}
+
+		_, err := ts.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String("nonexistent-bucket-12345"),
+			Delete: &types.Delete{
+				Objects: objectsToDelete,
+			},
+		})
+		if err == nil {
+			t.Fatal("Expected error for nonexistent bucket, got nil")
+		}
+
+		if !strings.Contains(err.Error(), "NoSuchBucket") && !strings.Contains(err.Error(), "404") {
+			t.Errorf("Expected NoSuchBucket error, got: %v", err)
+		}
+	})
+}
