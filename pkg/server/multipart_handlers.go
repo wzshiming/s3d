@@ -69,6 +69,7 @@ func (s *S3Server) handleUploadPart(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	w.Header().Set("ETag", fmt.Sprintf("%q", etag))
+	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(etag))
 	w.WriteHeader(http.StatusOK)
 }
 

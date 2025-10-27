@@ -3,9 +3,23 @@ package server
 import (
 	"encoding/xml"
 	"net/http"
+	"strings"
 
 	"github.com/wzshiming/s3d/pkg/s3types"
 )
+
+// urlSafeToStdBase64 converts URL-safe base64 encoding to standard base64 encoding.
+// This is needed because we use URL-safe base64 (with - and _ characters) for filenames
+// to avoid path separators, but AWS SDK expects standard base64 (with + and / characters)
+// in HTTP headers like x-amz-checksum-sha256.
+func urlSafeToStdBase64(urlSafe string) string {
+	if urlSafe == "" {
+		return ""
+	}
+	std := strings.ReplaceAll(urlSafe, "-", "+")
+	std = strings.ReplaceAll(std, "_", "/")
+	return std
+}
 
 // xmlResponse writes an XML response
 func (s *S3Server) xmlResponse(w http.ResponseWriter, data any, status int) {

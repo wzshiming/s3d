@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"crypto/md5"
-	"encoding/hex"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -75,8 +75,8 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while writing
-	hash := md5.New()
+	// Calculate SHA256 while writing
+	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
 	_, err = io.Copy(writer, data)
@@ -86,7 +86,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	tmpFile.Close()
 
-	etag := hex.EncodeToString(hash.Sum(nil))
+	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -144,8 +144,8 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while copying
-	hash := md5.New()
+	// Calculate SHA256 while copying
+	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
 	_, err = io.Copy(writer, srcFile)
@@ -155,7 +155,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	tmpFile.Close()
 
-	etag := hex.EncodeToString(hash.Sum(nil))
+	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -199,7 +199,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	defer os.Remove(tmpFile.Name())
 
-	hash := md5.New()
+	hash := sha256.New()
 
 	// Concatenate parts in order
 	for _, part := range parts {
@@ -226,8 +226,8 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return "", err
 	}
 
-	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
+	// Store metadata - use URL-safe base64 encoded SHA256
+	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata, err := s.loadMetadata(uploadMetaPath)

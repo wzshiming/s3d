@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"crypto/md5"
-	"encoding/hex"
+	"crypto/sha256"
+	"encoding/base64"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,8 +36,8 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate MD5 while writing
-	hash := md5.New()
+	// Calculate SHA256 while writing
+	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
 	if _, err := io.Copy(writer, data); err != nil {
@@ -51,8 +51,8 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		return "", err
 	}
 
-	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
+	// Store metadata - use URL-safe base64 encoded SHA256
+	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 	metadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
@@ -290,8 +290,8 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Copy data and calculate MD5
-	hash := md5.New()
+	// Copy data and calculate SHA256
+	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
 	if _, err := io.Copy(writer, srcFile); err != nil {
@@ -305,8 +305,8 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (strin
 		return "", err
 	}
 
-	// Store metadata
-	etag := hex.EncodeToString(hash.Sum(nil))
+	// Store metadata - use URL-safe base64 encoded SHA256
+	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
 	dstMetadata := &Metadata{
 		ContentType: contentType,
 		ETag:        etag,
