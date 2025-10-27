@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gorilla/handlers"
 	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/server"
 	"github.com/wzshiming/s3d/pkg/storage"
@@ -84,6 +85,7 @@ func main() {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
 	}
 
+	handler = handlers.CombinedLoggingHandler(log.Writer(), handler)
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
