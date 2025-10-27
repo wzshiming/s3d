@@ -51,34 +51,9 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", info.ContentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
-	w.Header().Set("Last-Modified", info.ModTime.UTC().Format(http.TimeFormat))
 
-	http.ServeContent(w, r, key, info.ModTime, reader)
-}
-
-// handleHeadObject handles HeadObject operation
-func (s *S3Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
-	reader, info, err := s.storage.GetObject(bucket, key)
-	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			w.WriteHeader(http.StatusNotFound)
-		case storage.ErrObjectNotFound:
-			w.WriteHeader(http.StatusNotFound)
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", info.ContentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
-	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
-	w.Header().Set("Last-Modified", info.ModTime.UTC().Format(http.TimeFormat))
 	http.ServeContent(w, r, key, info.ModTime, reader)
 }
 

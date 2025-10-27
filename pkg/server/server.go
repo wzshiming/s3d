@@ -109,12 +109,10 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			s.handlePutObject(w, r, bucket, key)
 		}
-	case http.MethodGet:
+	case http.MethodHead, http.MethodGet:
 		s.handleGetObject(w, r, bucket, key)
 	case http.MethodDelete:
 		s.handleDeleteObject(w, r, bucket, key)
-	case http.MethodHead:
-		s.handleHeadObject(w, r, bucket, key)
 	default:
 		s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 	}
