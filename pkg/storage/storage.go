@@ -164,8 +164,8 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 	return objectPath, nil
 }
 
-// Metadata represents object metadata
-type Metadata struct {
+// ObjectMetadata represents object metadata
+type ObjectMetadata struct {
 	ContentType string
 	ETag        string
 	// Data stores the file content inline for small files (<=256 bytes)
@@ -173,8 +173,13 @@ type Metadata struct {
 	Data []byte
 }
 
-// saveMetadata saves object metadata
-func (s *Storage) saveMetadata(path string, metadata *Metadata) error {
+// UploadMetadata represents multipart upload metadata
+type UploadMetadata struct {
+	ContentType string
+}
+
+// saveObjectMetadata saves object metadata
+func (s *Storage) saveObjectMetadata(path string, metadata *ObjectMetadata) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -185,8 +190,8 @@ func (s *Storage) saveMetadata(path string, metadata *Metadata) error {
 	return encoder.Encode(metadata)
 }
 
-// loadMetadata loads object metadata
-func (s *Storage) loadMetadata(path string) (*Metadata, error) {
+// loadObjectMetadata loads object metadata
+func (s *Storage) loadObjectMetadata(path string) (*ObjectMetadata, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -196,7 +201,38 @@ func (s *Storage) loadMetadata(path string) (*Metadata, error) {
 	}
 	defer file.Close()
 
-	var metadata Metadata
+	var metadata ObjectMetadata
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&metadata); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+// saveUploadMetadata saves upload metadata
+func (s *Storage) saveUploadMetadata(path string, metadata *UploadMetadata) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(metadata)
+}
+
+// loadUploadMetadata loads upload metadata
+func (s *Storage) loadUploadMetadata(path string) (*UploadMetadata, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var metadata UploadMetadata
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err
