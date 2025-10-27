@@ -1,7 +1,7 @@
 # s3d
 
 [![Tests](https://github.com/wzshiming/s3d/actions/workflows/test.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/test.yml)
-[![Build](https://github.com/wzshiming/s3d/actions/workflows/build.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/build.yml)
+[![Build](https://github.com/wzshiming/s3d/actions/workflows/go-cross-build.yml/badge.svg)](https://github.com/wzshiming/s3d/actions/workflows/go-cross-build.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/wzshiming/s3d.svg)](https://pkg.go.dev/github.com/wzshiming/s3d)
 
 An S3-compatible server with local storage
