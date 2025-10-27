@@ -120,7 +120,7 @@ main() {
     
     # Verify prerequisites and start server
     verify_aws_cli
-    start_server || exit 1
+    start_server || return 1
     
     # Create test bucket
     aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 mb "s3://${E2E_TEST_BUCKET}"

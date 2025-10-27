@@ -84,10 +84,12 @@ trap cleanup_server EXIT
 verify_aws_cli
 start_server
 
-# Run specific test suite
-source test/e2e/bucket_tests.sh
-test_create_bucket
-test_list_buckets
+# Run specific tests from object_tests.sh
+source test/e2e/object_tests.sh
+aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 mb "s3://${E2E_TEST_BUCKET}"
+test_upload_file
+test_list_objects
+test_download_file
 ```
 
 ### Using make
