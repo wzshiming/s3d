@@ -196,3 +196,53 @@ func (s *Storage) loadMetadata(path string) (*Metadata, error) {
 	}
 	return &metadata, nil
 }
+
+// cleanupEmptyDirs removes empty parent directories up to but not including the stopDir
+// This function is best-effort and will not fail the operation if cleanup fails
+func (s *Storage) cleanupEmptyDirs(dir, stopDir string) {
+	// Make sure both paths are absolute for comparison
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return
+	}
+	absStopDir, err := filepath.Abs(stopDir)
+	if err != nil {
+		return
+	}
+
+	current := absDir
+	for {
+		// Stop if we've reached the stop directory
+		if current == absStopDir {
+			break
+		}
+
+		// Ensure current is within stopDir using filepath.Rel
+		rel, err := filepath.Rel(absStopDir, current)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			// Current is not within stopDir, stop
+			break
+		}
+
+		// Try to read the directory
+		entries, err := os.ReadDir(current)
+		if err != nil {
+			// If directory doesn't exist or can't be read, stop
+			break
+		}
+
+		// If directory is not empty, stop
+		if len(entries) > 0 {
+			break
+		}
+
+		// Directory is empty, remove it
+		if err := os.Remove(current); err != nil {
+			// If we can't remove it, stop
+			break
+		}
+
+		// Move to parent directory
+		current = filepath.Dir(current)
+	}
+}

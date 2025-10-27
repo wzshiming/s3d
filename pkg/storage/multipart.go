@@ -256,7 +256,18 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return "", err
 	}
 
-	os.RemoveAll(uploadDir)
+	// Get the uploads base directory as the stop point
+	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
+
+	// Store the parent directory before deletion
+	parentDir := filepath.Dir(uploadDir)
+
+	if err := os.RemoveAll(uploadDir); err != nil {
+		return "", err
+	}
+
+	// Clean up empty parent directories
+	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return etag, nil
 }
@@ -273,9 +284,18 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 		return ErrInvalidUploadID
 	}
 
+	// Get the uploads base directory as the stop point
+	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
+
+	// Store the parent directory before deletion
+	parentDir := filepath.Dir(uploadDir)
+
 	if err := os.RemoveAll(uploadDir); err != nil {
 		return err
 	}
+
+	// Clean up empty parent directories
+	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return nil
 }
