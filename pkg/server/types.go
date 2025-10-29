@@ -199,23 +199,10 @@ type DeleteObjectsResult struct {
 	Errors  []DeleteError   `xml:"Error,omitempty"`
 }
 
-// TargetGrant represents a grant for log delivery in bucket logging
-type TargetGrant struct {
-	Grantee struct {
-		Type         string `xml:"xsi:type,attr"`
-		ID           string `xml:"ID,omitempty"`
-		DisplayName  string `xml:"DisplayName,omitempty"`
-		EmailAddress string `xml:"EmailAddress,omitempty"`
-		URI          string `xml:"URI,omitempty"`
-	} `xml:"Grantee"`
-	Permission string `xml:"Permission"`
-}
-
 // LoggingEnabled represents the logging configuration when enabled
 type LoggingEnabled struct {
-	TargetBucket string        `xml:"TargetBucket"`
-	TargetPrefix string        `xml:"TargetPrefix,omitempty"`
-	TargetGrants []TargetGrant `xml:"TargetGrants>Grant,omitempty"`
+	TargetBucket string `xml:"TargetBucket"`
+	TargetPrefix string `xml:"TargetPrefix,omitempty"`
 }
 
 // BucketLoggingStatus represents the logging status of a bucket

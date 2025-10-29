@@ -76,17 +76,22 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			remoteIP = remoteIP[:idx]
 		}
 
+		// Extract requester from Authorization header
+		requester := extractRequester(r)
+
 		entry := &accesslog.Entry{
-			Bucket:     bucket,
-			Key:        key,
-			RequestURI: r.RequestURI,
-			HTTPStatus: lw.StatusCode,
-			BytesSent:  lw.BytesWritten,
-			TotalTime:  totalTime,
-			RemoteIP:   remoteIP,
-			UserAgent:  r.UserAgent(),
-			Timestamp:  startTime,
-			Method:     r.Method,
+			Bucket:      bucket,
+			Key:         key,
+			RequestURI:  r.RequestURI,
+			HTTPStatus:  lw.StatusCode,
+			BytesSent:   lw.BytesWritten,
+			TotalTime:   totalTime,
+			RemoteIP:    remoteIP,
+			UserAgent:   r.UserAgent(),
+			Timestamp:   startTime,
+			Method:      r.Method,
+			BucketOwner: bucket, // For now, use bucket name as owner
+			Requester:   requester,
 		}
 
 		s.logger.Log(entry)
@@ -164,6 +169,38 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.errorResponse(lw, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// extractRequester extracts the requester ID from the Authorization header
+func extractRequester(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
+
+	// Parse AWS Signature Version 4
+	if strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256") {
+		// Format: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, ...
+		parts := strings.Split(authHeader, " ")
+		if len(parts) < 2 {
+			return ""
+		}
+
+		// Extract credential part
+		for _, part := range strings.Split(parts[1], ",") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "Credential=") {
+				credential := strings.TrimPrefix(part, "Credential=")
+				// Credential format: accessKeyID/date/region/service/aws4_request
+				credParts := strings.Split(credential, "/")
+				if len(credParts) > 0 {
+					return credParts[0] // Return the access key ID
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // FlushLogs flushes all buffered access logs (for testing)

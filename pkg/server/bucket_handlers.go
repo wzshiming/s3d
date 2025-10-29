@@ -124,19 +124,6 @@ func (s *S3Handler) handleGetBucketLogging(w http.ResponseWriter, r *http.Reques
 			TargetBucket: loggingConfig.TargetBucket,
 			TargetPrefix: loggingConfig.TargetPrefix,
 		}
-
-		// Convert grants
-		for _, grant := range loggingConfig.TargetGrants {
-			targetGrant := TargetGrant{
-				Permission: grant.Permission,
-			}
-			targetGrant.Grantee.Type = grant.GranteeType
-			targetGrant.Grantee.ID = grant.GranteeID
-			targetGrant.Grantee.EmailAddress = grant.GranteeEmail
-			targetGrant.Grantee.URI = grant.GranteeURI
-
-			result.LoggingEnabled.TargetGrants = append(result.LoggingEnabled.TargetGrants, targetGrant)
-		}
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)
@@ -155,17 +142,6 @@ func (s *S3Handler) handlePutBucketLogging(w http.ResponseWriter, r *http.Reques
 		loggingConfig = &storage.LoggingConfig{
 			TargetBucket: loggingStatus.LoggingEnabled.TargetBucket,
 			TargetPrefix: loggingStatus.LoggingEnabled.TargetPrefix,
-		}
-
-		// Convert grants
-		for _, grant := range loggingStatus.LoggingEnabled.TargetGrants {
-			loggingConfig.TargetGrants = append(loggingConfig.TargetGrants, storage.LoggingTargetGrant{
-				GranteeType:  grant.Grantee.Type,
-				GranteeID:    grant.Grantee.ID,
-				GranteeEmail: grant.Grantee.EmailAddress,
-				GranteeURI:   grant.Grantee.URI,
-				Permission:   grant.Permission,
-			})
 		}
 	}
 
