@@ -105,3 +105,82 @@ func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, buc
 	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusOK)
 }
+
+// handleGetBucketLogging handles GetBucketLogging operation
+func (s *S3Handler) handleGetBucketLogging(w http.ResponseWriter, r *http.Request, bucket string) {
+	loggingConfig, err := s.storage.GetBucketLogging(bucket)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "The specified bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	result := BucketLoggingStatus{}
+	if loggingConfig != nil {
+		result.LoggingEnabled = &LoggingEnabled{
+			TargetBucket: loggingConfig.TargetBucket,
+			TargetPrefix: loggingConfig.TargetPrefix,
+		}
+
+		// Convert grants
+		for _, grant := range loggingConfig.TargetGrants {
+			targetGrant := TargetGrant{
+				Permission: grant.Permission,
+			}
+			targetGrant.Grantee.Type = grant.GranteeType
+			targetGrant.Grantee.ID = grant.GranteeID
+			targetGrant.Grantee.EmailAddress = grant.GranteeEmail
+			targetGrant.Grantee.URI = grant.GranteeURI
+
+			result.LoggingEnabled.TargetGrants = append(result.LoggingEnabled.TargetGrants, targetGrant)
+		}
+	}
+
+	s.xmlResponse(w, r, result, http.StatusOK)
+}
+
+// handlePutBucketLogging handles PutBucketLogging operation
+func (s *S3Handler) handlePutBucketLogging(w http.ResponseWriter, r *http.Request, bucket string) {
+	var loggingStatus BucketLoggingStatus
+	if err := s.xmlDecode(r.Body, &loggingStatus); err != nil {
+		s.errorResponse(w, r, "MalformedXML", "The XML provided was not well-formed", http.StatusBadRequest)
+		return
+	}
+
+	var loggingConfig *storage.LoggingConfig
+	if loggingStatus.LoggingEnabled != nil {
+		loggingConfig = &storage.LoggingConfig{
+			TargetBucket: loggingStatus.LoggingEnabled.TargetBucket,
+			TargetPrefix: loggingStatus.LoggingEnabled.TargetPrefix,
+		}
+
+		// Convert grants
+		for _, grant := range loggingStatus.LoggingEnabled.TargetGrants {
+			loggingConfig.TargetGrants = append(loggingConfig.TargetGrants, storage.LoggingTargetGrant{
+				GranteeType:  grant.Grantee.Type,
+				GranteeID:    grant.Grantee.ID,
+				GranteeEmail: grant.Grantee.EmailAddress,
+				GranteeURI:   grant.Grantee.URI,
+				Permission:   grant.Permission,
+			})
+		}
+	}
+
+	err := s.storage.PutBucketLogging(bucket, loggingConfig)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "The specified bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Invalidate cache for this bucket
+	s.logger.InvalidateCache(bucket)
+
+	w.WriteHeader(http.StatusOK)
+}

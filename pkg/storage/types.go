@@ -38,3 +38,24 @@ type MultipartUpload struct {
 	Key      string
 	ModTime  time.Time
 }
+
+// BucketMetadata represents bucket-level configuration
+type BucketMetadata struct {
+	LoggingEnabled *LoggingConfig `json:"loggingEnabled,omitempty"`
+}
+
+// LoggingConfig represents the bucket logging configuration
+type LoggingConfig struct {
+	TargetBucket string               `json:"targetBucket"`
+	TargetPrefix string               `json:"targetPrefix,omitempty"`
+	TargetGrants []LoggingTargetGrant `json:"targetGrants,omitempty"`
+}
+
+// LoggingTargetGrant represents a grant for log delivery
+type LoggingTargetGrant struct {
+	GranteeType  string `json:"granteeType"`
+	GranteeID    string `json:"granteeId,omitempty"`
+	GranteeEmail string `json:"granteeEmail,omitempty"`
+	GranteeURI   string `json:"granteeUri,omitempty"`
+	Permission   string `json:"permission"`
+}

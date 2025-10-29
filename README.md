@@ -12,6 +12,7 @@ An S3-compatible server with local storage
 - Object operations (put, get, delete, head, copy)
 - ListObjects v1 and v2 with prefix/delimiter
 - Multipart uploads
+- Bucket logging configuration (GetBucketLogging, PutBucketLogging)
 - AWS Signature V4 authentication
 
 ### Not yet implemented
