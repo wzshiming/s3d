@@ -34,7 +34,7 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 		UploadId: uploadID,
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleUploadPart handles UploadPart operation
@@ -66,6 +66,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
 	w.WriteHeader(http.StatusOK)
@@ -123,7 +124,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleCompleteMultipartUpload handles CompleteMultipartUpload operation
@@ -168,7 +169,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		ETag:     fmt.Sprintf("%q", objInfo.ETag),
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleAbortMultipartUpload handles AbortMultipartUpload operation
@@ -186,6 +187,7 @@ func (s *S3Handler) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -251,7 +253,7 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 		})
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleListParts handles ListParts operation
@@ -322,5 +324,5 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 		})
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }

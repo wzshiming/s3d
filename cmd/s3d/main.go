@@ -17,6 +17,7 @@ type Config struct {
 	Addr        string
 	DataDir     string
 	Credentials string
+	Region      string
 }
 
 // parseCredentials parses comma-separated credentials and adds them to the authenticator
@@ -43,7 +44,7 @@ func createServer(cfg *Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := server.NewS3Handler(store)
+	s := server.NewS3Handler(store, server.WithRegion(cfg.Region))
 	if cfg.Credentials == "" {
 		return s, nil
 	}
@@ -64,12 +65,14 @@ func main() {
 	addr := flag.String("addr", ":8080", "Server address")
 	dataDir := flag.String("data", "./data", "Data directory for storage")
 	credentials := flag.String("credentials", "", "Credentials in format accessKeyID:secretAccessKey (can specify multiple separated by comma)")
+	region := flag.String("region", "us-east-1", "AWS region name")
 	flag.Parse()
 
 	cfg := &Config{
 		Addr:        *addr,
 		DataDir:     *dataDir,
 		Credentials: *credentials,
+		Region:      *region,
 	}
 
 	handler, err := createServer(cfg)
@@ -80,6 +83,7 @@ func main() {
 	// Start server
 	log.Printf("Starting S3-compatible server on %s", cfg.Addr)
 	log.Printf("Data directory: %s", cfg.DataDir)
+	log.Printf("Region: %s", cfg.Region)
 
 	if cfg.Credentials == "" {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")

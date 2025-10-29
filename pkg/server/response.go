@@ -19,8 +19,14 @@ func urlSafeToStdBase64(urlSafe string) string {
 	return std
 }
 
+// setHeaders sets common headers on the response
+func (s *S3Handler) setHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("x-amz-bucket-region", s.region)
+}
+
 // xmlResponse writes an XML response
-func (s *S3Handler) xmlResponse(w http.ResponseWriter, data any, status int) {
+func (s *S3Handler) xmlResponse(w http.ResponseWriter, r *http.Request, data any, status int) {
+	s.setHeaders(w, r)
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
 
@@ -39,6 +45,7 @@ func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, 
 		Message: message,
 	}
 
+	s.setHeaders(w, r)
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
 

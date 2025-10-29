@@ -36,6 +36,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
 	w.WriteHeader(http.StatusOK)
@@ -57,6 +58,7 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 	}
 	defer reader.Close()
 
+	s.setHeaders(w, r)
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
@@ -76,6 +78,7 @@ func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -117,7 +120,7 @@ func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleCopyObject handles CopyObject operation
@@ -161,7 +164,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleRenameObject handles RenameObject operation
@@ -207,6 +210,7 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 	}
 
 	// RenameObject returns 204 No Content on success
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -283,7 +287,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		})
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleListObjectsV2 handles ListObjectsV2 operation
@@ -362,5 +366,5 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		})
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }

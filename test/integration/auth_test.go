@@ -36,7 +36,7 @@ func TestAuthenticationRequired(t *testing.T) {
 	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("test-access-key", "test-secret-key")
 
-	s3Handler := server.NewS3Handler(store)
+	s3Handler := server.NewS3Handler(store, server.WithRegion("us-east-1"))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -172,7 +172,7 @@ func TestAuthenticatedBucketOperations(t *testing.T) {
 	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("my-access-key", "my-secret-key")
 
-	s3Handler := server.NewS3Handler(store)
+	s3Handler := server.NewS3Handler(store, server.WithRegion("us-east-1"))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -283,7 +283,7 @@ func TestAuthenticatedObjectOperations(t *testing.T) {
 	authenticator := auth.NewAWS4Authenticator()
 	authenticator.AddCredentials("object-key", "object-secret")
 
-	s3Handler := server.NewS3Handler(store)
+	s3Handler := server.NewS3Handler(store, server.WithRegion("us-east-1"))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -439,7 +439,7 @@ func TestMultipleCredentials(t *testing.T) {
 	authenticator.AddCredentials("user1-key", "user1-secret")
 	authenticator.AddCredentials("user2-key", "user2-secret")
 
-	s3Handler := server.NewS3Handler(store)
+	s3Handler := server.NewS3Handler(store, server.WithRegion("us-east-1"))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

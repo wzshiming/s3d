@@ -52,7 +52,7 @@ func setupTestServer() *testServer {
 	}
 
 	// Create server
-	s3Handler := NewS3Handler(store)
+	s3Handler := NewS3Handler(store, WithRegion("us-east-1"))
 
 	// Start test HTTP server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

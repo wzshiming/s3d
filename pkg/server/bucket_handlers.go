@@ -59,7 +59,7 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.xmlResponse(w, result, http.StatusOK)
+	s.xmlResponse(w, r, result, http.StatusOK)
 }
 
 // handleCreateBucket handles CreateBucket operation
@@ -74,6 +74,7 @@ func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -89,15 +90,18 @@ func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleHeadBucket handles HeadBucket operation
 func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	if !s.storage.BucketExists(bucket) {
+		s.setHeaders(w, r)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
+	s.setHeaders(w, r)
 	w.WriteHeader(http.StatusOK)
 }
