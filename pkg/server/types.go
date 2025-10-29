@@ -19,13 +19,13 @@ type Owner struct {
 
 // ListAllMyBucketsResult is the response for ListBuckets operation
 type ListAllMyBucketsResult struct {
-	XMLName           xml.Name `xml:"ListAllMyBucketsResult"`
-	Owner             Owner    `xml:"Owner"`
-	Buckets           struct {
+	XMLName xml.Name `xml:"ListAllMyBucketsResult"`
+	Owner   Owner    `xml:"Owner"`
+	Buckets struct {
 		Bucket []Bucket `xml:"Bucket"`
 	} `xml:"Buckets"`
-	ContinuationToken string   `xml:"ContinuationToken,omitempty"`
-	Prefix            string   `xml:"Prefix,omitempty"`
+	ContinuationToken string `xml:"ContinuationToken,omitempty"`
+	Prefix            string `xml:"Prefix,omitempty"`
 }
 
 // Contents represents an object in ListObjectsV2 response

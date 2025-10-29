@@ -10,7 +10,7 @@ import (
 // handleListBuckets handles ListBuckets operation
 func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	
+
 	// Parse pagination parameters
 	prefix := query.Get("prefix")
 	continuationToken := query.Get("continuation-token")
@@ -20,14 +20,14 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 			maxBuckets = parsed
 		}
 	}
-	
+
 	// Fetch one extra bucket to determine if there are more results
 	buckets, err := s.storage.ListBuckets(prefix, continuationToken, maxBuckets+1)
 	if err != nil {
 		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Determine if results are truncated
 	isTruncated := len(buckets) > maxBuckets
 	var nextContinuationToken string
@@ -47,7 +47,7 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 		},
 		Prefix: prefix,
 	}
-	
+
 	if isTruncated {
 		result.ContinuationToken = nextContinuationToken
 	}

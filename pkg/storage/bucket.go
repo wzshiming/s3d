@@ -49,17 +49,17 @@ func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) 
 		if sanitizeBucketName(name) != nil {
 			continue
 		}
-		
+
 		// Filter by prefix if provided
 		if prefix != "" && !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		
+
 		// Skip buckets before or equal to continuationToken (for pagination)
 		if continuationToken != "" && name <= continuationToken {
 			continue
 		}
-		
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -68,7 +68,7 @@ func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) 
 			Name:    name,
 			ModTime: info.ModTime(),
 		})
-		
+
 		// Stop if we've reached maxBuckets (fetch one extra to determine if truncated)
 		if maxBuckets > 0 && len(buckets) >= maxBuckets {
 			break
