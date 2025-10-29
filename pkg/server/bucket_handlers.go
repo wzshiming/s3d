@@ -74,6 +74,7 @@ func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setRegionHeader(w)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -89,15 +90,18 @@ func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setRegionHeader(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleHeadBucket handles HeadBucket operation
 func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	if !s.storage.BucketExists(bucket) {
+		s.setRegionHeader(w)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
+	s.setRegionHeader(w)
 	w.WriteHeader(http.StatusOK)
 }

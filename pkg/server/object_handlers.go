@@ -36,6 +36,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	s.setRegionHeader(w)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
 	w.WriteHeader(http.StatusOK)
@@ -57,6 +58,7 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 	}
 	defer reader.Close()
 
+	s.setRegionHeader(w)
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
@@ -76,6 +78,7 @@ func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	s.setRegionHeader(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -207,6 +210,7 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 	}
 
 	// RenameObject returns 204 No Content on success
+	s.setRegionHeader(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 

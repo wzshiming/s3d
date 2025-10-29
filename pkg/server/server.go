@@ -10,12 +10,14 @@ import (
 // S3Handler represents the S3-compatible server
 type S3Handler struct {
 	storage *storage.Storage
+	region  string
 }
 
 // NewS3Handler creates a new S3 server
-func NewS3Handler(storage *storage.Storage) *S3Handler {
+func NewS3Handler(storage *storage.Storage, region string) *S3Handler {
 	return &S3Handler{
 		storage: storage,
+		region:  region,
 	}
 }
 
