@@ -44,7 +44,7 @@ func createServer(cfg *Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := server.NewS3Handler(store, cfg.Region)
+	s := server.NewS3Handler(store, server.WithRegion(cfg.Region))
 	if cfg.Credentials == "" {
 		return s, nil
 	}

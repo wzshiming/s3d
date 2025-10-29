@@ -13,12 +13,26 @@ type S3Handler struct {
 	region  string
 }
 
-// NewS3Handler creates a new S3 server
-func NewS3Handler(storage *storage.Storage, region string) *S3Handler {
-	return &S3Handler{
-		storage: storage,
-		region:  region,
+// Option is a functional option for configuring S3Handler
+type Option func(*S3Handler)
+
+// WithRegion sets the region for the S3Handler
+func WithRegion(region string) Option {
+	return func(h *S3Handler) {
+		h.region = region
 	}
+}
+
+// NewS3Handler creates a new S3 server
+func NewS3Handler(storage *storage.Storage, opts ...Option) *S3Handler {
+	h := &S3Handler{
+		storage: storage,
+		region:  "us-east-1", // default region
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // handleRequest handles all S3 requests

@@ -20,7 +20,7 @@ func TestRegionHeader(t *testing.T) {
 
 	// Test with custom region
 	testRegion := "eu-west-1"
-	handler := NewS3Handler(store, testRegion)
+	handler := NewS3Handler(store, WithRegion(testRegion))
 
 	// Create a bucket for testing
 	if err := store.CreateBucket("test-bucket"); err != nil {
@@ -141,7 +141,7 @@ func TestRegionHeaderDefaultValue(t *testing.T) {
 
 	// Use default region
 	defaultRegion := "us-east-1"
-	handler := NewS3Handler(store, defaultRegion)
+	handler := NewS3Handler(store, WithRegion(defaultRegion))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()

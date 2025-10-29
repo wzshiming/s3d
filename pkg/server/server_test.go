@@ -23,7 +23,7 @@ func TestServerRun(t *testing.T) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	s3Handler := NewS3Handler(store, "us-east-1")
+	s3Handler := NewS3Handler(store, WithRegion("us-east-1"))
 
 	// Find an available port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
