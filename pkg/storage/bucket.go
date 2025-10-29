@@ -70,3 +70,43 @@ func (s *Storage) BucketExists(bucket string) bool {
 	info, err := os.Stat(bucketPath)
 	return err == nil && info.IsDir()
 }
+
+// GetBucketLogging retrieves the logging configuration for a bucket
+func (s *Storage) GetBucketLogging(bucket string) (*BucketLoggingConfig, error) {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if !s.BucketExists(bucket) {
+		return nil, ErrBucketNotFound
+	}
+
+	loggingFile := bucketPath + "/.logging"
+	config, err := loadBucketLogging(loggingFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+// PutBucketLogging sets the logging configuration for a bucket
+func (s *Storage) PutBucketLogging(bucket string, config *BucketLoggingConfig) error {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
+	if !s.BucketExists(bucket) {
+		return ErrBucketNotFound
+	}
+
+	loggingFile := bucketPath + "/.logging"
+	if config == nil {
+		// Delete logging configuration
+		return os.Remove(loggingFile)
+	}
+
+	return saveBucketLogging(loggingFile, config)
+}

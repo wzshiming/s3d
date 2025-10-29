@@ -32,6 +32,11 @@ func (s *S3Handler) xmlResponse(w http.ResponseWriter, data any, status int) {
 	}
 }
 
+// xmlRequest reads and decodes an XML request body
+func (s *S3Handler) xmlRequest(r *http.Request, data any) error {
+	return xml.NewDecoder(r.Body).Decode(data)
+}
+
 // errorResponse writes an error response
 func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, message string, status int) {
 	err := Error{

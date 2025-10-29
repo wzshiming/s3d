@@ -70,3 +70,55 @@ func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, buc
 
 	w.WriteHeader(http.StatusOK)
 }
+
+// handleGetBucketLogging handles GetBucketLogging operation
+func (s *S3Handler) handleGetBucketLogging(w http.ResponseWriter, r *http.Request, bucket string) {
+	config, err := s.storage.GetBucketLogging(bucket)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	result := BucketLoggingStatus{}
+	if config != nil {
+		result.LoggingEnabled = &LoggingEnabled{
+			TargetBucket: config.TargetBucket,
+			TargetPrefix: config.TargetPrefix,
+		}
+	}
+
+	s.xmlResponse(w, result, http.StatusOK)
+}
+
+// handlePutBucketLogging handles PutBucketLogging operation
+func (s *S3Handler) handlePutBucketLogging(w http.ResponseWriter, r *http.Request, bucket string) {
+	var loggingStatus BucketLoggingStatus
+	if err := s.xmlRequest(r, &loggingStatus); err != nil {
+		s.errorResponse(w, r, "InvalidRequest", "Invalid bucket logging configuration", http.StatusBadRequest)
+		return
+	}
+
+	var config *storage.BucketLoggingConfig
+	if loggingStatus.LoggingEnabled != nil {
+		config = &storage.BucketLoggingConfig{
+			TargetBucket: loggingStatus.LoggingEnabled.TargetBucket,
+			TargetPrefix: loggingStatus.LoggingEnabled.TargetPrefix,
+		}
+	}
+
+	err := s.storage.PutBucketLogging(bucket, config)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}

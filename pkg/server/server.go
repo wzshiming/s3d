@@ -44,9 +44,15 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		switch r.Method {
 		case http.MethodPut:
-			s.handleCreateBucket(w, r, bucket)
+			if query.Has("logging") {
+				s.handlePutBucketLogging(w, r, bucket)
+			} else {
+				s.handleCreateBucket(w, r, bucket)
+			}
 		case http.MethodGet:
-			if query.Has("uploads") {
+			if query.Has("logging") {
+				s.handleGetBucketLogging(w, r, bucket)
+			} else if query.Has("uploads") {
 				s.handleListMultipartUploads(w, r, bucket)
 			} else {
 				s.handleListObjects(w, r, bucket)

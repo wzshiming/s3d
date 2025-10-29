@@ -196,3 +196,32 @@ type DeleteObjectsResult struct {
 	Deleted []DeletedObject `xml:"Deleted,omitempty"`
 	Errors  []DeleteError   `xml:"Error,omitempty"`
 }
+
+// Grantee represents a grantee in bucket logging configuration
+type Grantee struct {
+	XMLName      xml.Name `xml:"Grantee"`
+	XsiType      string   `xml:"http://www.w3.org/2001/XMLSchema-instance type,attr"`
+	ID           string   `xml:"ID,omitempty"`
+	DisplayName  string   `xml:"DisplayName,omitempty"`
+	EmailAddress string   `xml:"EmailAddress,omitempty"`
+	URI          string   `xml:"URI,omitempty"`
+}
+
+// TargetGrant represents a grant in bucket logging configuration
+type TargetGrant struct {
+	Grantee    Grantee `xml:"Grantee"`
+	Permission string  `xml:"Permission"`
+}
+
+// LoggingEnabled represents the logging configuration
+type LoggingEnabled struct {
+	TargetBucket string        `xml:"TargetBucket"`
+	TargetPrefix string        `xml:"TargetPrefix,omitempty"`
+	TargetGrants []TargetGrant `xml:"TargetGrants>Grant,omitempty"`
+}
+
+// BucketLoggingStatus is the response for GetBucketLogging operation
+type BucketLoggingStatus struct {
+	XMLName        xml.Name        `xml:"BucketLoggingStatus"`
+	LoggingEnabled *LoggingEnabled `xml:"LoggingEnabled,omitempty"`
+}

@@ -202,6 +202,37 @@ func loadUploadMetadata(path string) (*uploadMetadata, error) {
 	return &metadata, nil
 }
 
+// saveBucketLogging saves bucket logging configuration
+func saveBucketLogging(path string, config *BucketLoggingConfig) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(config)
+}
+
+// loadBucketLogging loads bucket logging configuration
+func loadBucketLogging(path string) (*BucketLoggingConfig, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var config BucketLoggingConfig
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
 // cleanupEmptyDirs removes empty parent directories up to but not including the stopDir
 // This function is best-effort and will not fail the operation if cleanup fails
 func (s *Storage) cleanupEmptyDirs(dir, stopDir string) {
