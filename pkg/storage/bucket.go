@@ -104,8 +104,12 @@ func (s *Storage) PutBucketLogging(bucket string, config *BucketLoggingConfig) e
 
 	loggingFile := bucketPath + "/.logging"
 	if config == nil {
-		// Delete logging configuration
-		return os.Remove(loggingFile)
+		// Delete logging configuration - ignore if it doesn't exist
+		err := os.Remove(loggingFile)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
 	}
 
 	return saveBucketLogging(loggingFile, config)
