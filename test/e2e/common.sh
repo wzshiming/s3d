@@ -37,11 +37,13 @@ setup() {
 
     # Build the server
     echo -e "\n${YELLOW}Building server...${NC}"
-    go build -o ./s3d ./cmd/s3d
+    cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+    go build -o ./test/e2e/s3d ./cmd/s3d
     if [ $? -ne 0 ]; then
         echo -e "${RED}Failed to build server${NC}"
         exit 1
     fi
+    cd test/e2e
     echo -e "${GREEN}Server built successfully${NC}"
 
     # Start the server in the background without authentication
