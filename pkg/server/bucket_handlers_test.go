@@ -198,8 +198,8 @@ func TestListBucketsPagination(t *testing.T) {
 		}
 
 		// Should only return buckets starting with "test-bucket-pagination-00"
-		// which are: 000, 001, 002, ..., 009
-		expectedCount := 10 // 000 through 009
+		// This matches buckets: 000, 001, 002, 003, 004, 005, 006, 007, 008, 009 (exactly 10 buckets)
+		expectedCount := 10
 		if len(output.Buckets) != expectedCount {
 			t.Fatalf("Expected %d buckets with prefix, got %d", expectedCount, len(output.Buckets))
 		}

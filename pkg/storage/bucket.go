@@ -55,7 +55,7 @@ func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) 
 			continue
 		}
 		
-		// Skip buckets before continuationToken (for pagination)
+		// Skip buckets before or equal to continuationToken (for pagination)
 		if continuationToken != "" && name <= continuationToken {
 			continue
 		}

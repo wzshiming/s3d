@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/bucket_tests.sh"
+source "${SCRIPT_DIR}/bucket_pagination_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
@@ -17,6 +18,9 @@ setup
 test_list_empty_buckets
 test_create_bucket
 test_list_buckets
+
+# Run bucket pagination tests
+run_bucket_pagination_tests
 
 # Run object tests
 test_upload_file
