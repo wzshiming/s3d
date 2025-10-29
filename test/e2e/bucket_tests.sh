@@ -1,43 +1,42 @@
 #!/bin/bash
 # Tests for bucket operations
 
-source "$(dirname "$0")/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/utils.sh"
 
 # Test 1: List buckets (should be empty)
 test_list_empty_buckets() {
-    echo -e "\n${YELLOW}Test: List buckets (should be empty)${NC}"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls
-    echo -e "${GREEN}✓ List buckets successful${NC}"
+    test_header "List buckets (should be empty)"
+    aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 ls
+    assert_success "List buckets successful"
 }
 
 # Test 2: Create bucket
 test_create_bucket() {
-    echo -e "\n${YELLOW}Test: Create bucket${NC}"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${TEST_BUCKET}
-    echo -e "${GREEN}✓ Bucket created${NC}"
+    test_header "Create bucket"
+    aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 mb "s3://${E2E_TEST_BUCKET}"
+    assert_success "Bucket created"
 }
 
 # Test 3: List buckets (should show our bucket)
 test_list_buckets() {
-    echo -e "\n${YELLOW}Test: List buckets (should show our bucket)${NC}"
-    BUCKETS=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls)
-    if echo "$BUCKETS" | grep -q "${TEST_BUCKET}"; then
-        echo -e "${GREEN}✓ Bucket listed successfully${NC}"
+    test_header "List buckets (should show our bucket)"
+    if bucket_exists "${E2E_SERVER_ADDR}" "${E2E_TEST_BUCKET}"; then
+        assert_success "Bucket listed successfully"
     else
-        echo -e "${RED}✗ Bucket not found in list${NC}"
-        exit 1
+        assert_failure "Bucket not found in list"
     fi
 }
 
-# Test 14: Delete bucket
+# Test 4: Delete bucket
 test_delete_bucket() {
-    echo -e "\n${YELLOW}Test: Delete bucket${NC}"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rb s3://${TEST_BUCKET}
-    BUCKETS=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls)
-    if ! echo "$BUCKETS" | grep -q "${TEST_BUCKET}"; then
-        echo -e "${GREEN}✓ Bucket deleted${NC}"
+    test_header "Delete bucket"
+    aws --endpoint-url="${E2E_SERVER_ADDR}" --no-sign-request s3 rb "s3://${E2E_TEST_BUCKET}"
+    
+    if ! bucket_exists "${E2E_SERVER_ADDR}" "${E2E_TEST_BUCKET}"; then
+        assert_success "Bucket deleted"
     else
-        echo -e "${RED}✗ Bucket still exists${NC}"
-        exit 1
+        assert_failure "Bucket still exists"
     fi
 }

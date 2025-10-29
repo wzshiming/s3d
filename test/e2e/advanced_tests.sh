@@ -1,139 +1,144 @@
 #!/bin/bash
 # Tests for multipart upload and advanced features
 
-source "$(dirname "$0")/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
 
-# Test 11: Upload large file (multipart)
+# Test: Upload large file (multipart)
 test_multipart_upload() {
-    echo -e "\n${YELLOW}Test: Upload large file (multipart)${NC}"
+    test_header "Upload large file (multipart)"
     # Create a 10MB file
     dd if=/dev/zero of="${TEST_DATA_DIR}/large-file.bin" bs=1M count=10 2>/dev/null
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/large-file.bin" s3://${TEST_BUCKET}/large-file.bin
-    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "large-file.bin"; then
-        echo -e "${GREEN}✓ Large file uploaded${NC}"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp \
+        "${TEST_DATA_DIR}/large-file.bin" "s3://${TEST_BUCKET}/large-file.bin"
+    
+    if object_exists "${SERVER_ADDR}" "${TEST_BUCKET}" "large-file.bin"; then
+        assert_success "Large file uploaded"
     else
-        echo -e "${RED}✗ Large file not found${NC}"
-        exit 1
+        assert_failure "Large file not found"
     fi
 }
 
-# Test 12: Sync directory
+# Test: Sync directory
 test_sync_directory() {
-    echo -e "\n${YELLOW}Test: Sync directory${NC}"
+    test_header "Sync directory"
     mkdir -p "${TEST_DATA_DIR}/sync-test"
     for i in {1..3}; do
         echo "Sync test $i" > "${TEST_DATA_DIR}/sync-test/sync-${i}.txt"
     done
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 sync "${TEST_DATA_DIR}/sync-test/" s3://${TEST_BUCKET}/synced/
-    SYNCED_COUNT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/synced/ | grep -c "sync-" || true)
-    if [ "$SYNCED_COUNT" -eq 3 ]; then
-        echo -e "${GREEN}✓ Directory synced successfully${NC}"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 sync \
+        "${TEST_DATA_DIR}/sync-test/" "s3://${TEST_BUCKET}/synced/"
+    
+    local synced_count=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls \
+        "s3://${TEST_BUCKET}/synced/" | grep -c "sync-" || true)
+    
+    if [ "$synced_count" -eq 3 ]; then
+        assert_success "Directory synced successfully"
     else
-        echo -e "${RED}✗ Expected 3 synced files, found ${SYNCED_COUNT}${NC}"
-        exit 1
+        assert_failure "Expected 3 synced files, found ${synced_count}"
     fi
 }
 
-# Test 13: UploadPartCopy - Copy existing object to multipart upload part
+# Test: UploadPartCopy - Copy existing object to multipart upload part
 test_upload_part_copy() {
-    echo -e "\n${YELLOW}Test: UploadPartCopy (copy object to multipart part)${NC}"
+    test_header "UploadPartCopy (copy object to multipart part)"
     
     # Create bucket if it doesn't exist
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${TEST_BUCKET} 2>/dev/null || true
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb "s3://${TEST_BUCKET}" 2>/dev/null || true
     
     # Create a source object to copy from
     echo "Source object content for UploadPartCopy test" > "${TEST_DATA_DIR}/source-for-copy.txt"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/source-for-copy.txt" s3://${TEST_BUCKET}/source-for-copy.txt
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp \
+        "${TEST_DATA_DIR}/source-for-copy.txt" "s3://${TEST_BUCKET}/source-for-copy.txt"
     
     # Create part 1 data
     echo "Part 1 data" > "${TEST_DATA_DIR}/part1.txt"
     
     # Initiate multipart upload
-    UPLOAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api create-multipart-upload \
-        --bucket ${TEST_BUCKET} \
+    local upload_output=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api create-multipart-upload \
+        --bucket "${TEST_BUCKET}" \
         --key multipart-with-copy.txt 2>&1)
-    UPLOAD_ID=$(echo "$UPLOAD_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['UploadId'])" 2>/dev/null || echo "")
+    local upload_id=$(echo "$upload_output" | python3 -c "import sys, json; print(json.load(sys.stdin)['UploadId'])" 2>/dev/null || echo "")
     
-    if [ -z "$UPLOAD_ID" ]; then
-        echo -e "${RED}✗ Failed to initiate multipart upload${NC}"
-        exit 1
+    if [ -z "$upload_id" ]; then
+        assert_failure "Failed to initiate multipart upload"
     fi
     
-    echo "Upload ID: $UPLOAD_ID"
+    echo "Upload ID: $upload_id"
     
     # Upload part 1 from local file
-    PART1_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part \
-        --bucket ${TEST_BUCKET} \
+    local part1_output=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part \
+        --bucket "${TEST_BUCKET}" \
         --key multipart-with-copy.txt \
         --part-number 1 \
-        --upload-id "$UPLOAD_ID" \
+        --upload-id "$upload_id" \
         --body "${TEST_DATA_DIR}/part1.txt" 2>&1)
-    PART1_ETAG=$(echo "$PART1_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['ETag'])" 2>/dev/null || echo "")
+    local part1_etag=$(echo "$part1_output" | python3 -c "import sys, json; print(json.load(sys.stdin)['ETag'])" 2>/dev/null || echo "")
     
-    echo "Part 1 ETag: $PART1_ETAG"
+    echo "Part 1 ETag: $part1_etag"
     
     # Upload part 2 using UploadPartCopy from the source object
-    PART2_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part-copy \
-        --bucket ${TEST_BUCKET} \
+    local part2_output=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part-copy \
+        --bucket "${TEST_BUCKET}" \
         --key multipart-with-copy.txt \
         --part-number 2 \
-        --upload-id "$UPLOAD_ID" \
+        --upload-id "$upload_id" \
         --copy-source "${TEST_BUCKET}/source-for-copy.txt" 2>&1)
-    PART2_ETAG=$(echo "$PART2_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['CopyPartResult']['ETag'])" 2>/dev/null || echo "")
+    local part2_etag=$(echo "$part2_output" | python3 -c "import sys, json; print(json.load(sys.stdin)['CopyPartResult']['ETag'])" 2>/dev/null || echo "")
     
-    if [ -z "$PART2_ETAG" ]; then
-        echo -e "${RED}✗ UploadPartCopy failed${NC}"
+    if [ -z "$part2_etag" ]; then
         # Abort the upload
         aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api abort-multipart-upload \
-            --bucket ${TEST_BUCKET} \
+            --bucket "${TEST_BUCKET}" \
             --key multipart-with-copy.txt \
-            --upload-id "$UPLOAD_ID" 2>/dev/null || true
-        exit 1
+            --upload-id "$upload_id" 2>/dev/null || true
+        assert_failure "UploadPartCopy failed"
     fi
     
-    echo "Part 2 ETag (from UploadPartCopy): $PART2_ETAG"
+    echo "Part 2 ETag (from UploadPartCopy): $part2_etag"
     
     # Complete multipart upload with proper JSON formatting
     cat > "${TEST_DATA_DIR}/parts.json" <<EOF
 {
     "Parts": [
         {
-            "ETag": $PART1_ETAG,
+            "ETag": $part1_etag,
             "PartNumber": 1
         },
         {
-            "ETag": $PART2_ETAG,
+            "ETag": $part2_etag,
             "PartNumber": 2
         }
     ]
 }
 EOF
     
-    COMPLETE_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api complete-multipart-upload \
-        --bucket ${TEST_BUCKET} \
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api complete-multipart-upload \
+        --bucket "${TEST_BUCKET}" \
         --key multipart-with-copy.txt \
-        --upload-id "$UPLOAD_ID" \
-        --multipart-upload "file://${TEST_DATA_DIR}/parts.json" 2>&1)
+        --upload-id "$upload_id" \
+        --multipart-upload "file://${TEST_DATA_DIR}/parts.json" 2>&1 > /dev/null
     
     # Verify the object exists
-    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/ | grep -q "multipart-with-copy.txt"; then
-        echo -e "${GREEN}✓ UploadPartCopy completed successfully${NC}"
+    if object_exists "${SERVER_ADDR}" "${TEST_BUCKET}" "multipart-with-copy.txt"; then
+        assert_success "UploadPartCopy completed successfully"
     else
-        echo -e "${RED}✗ Multipart upload with copy failed${NC}"
-        exit 1
+        assert_failure "Multipart upload with copy failed"
     fi
 }
 
-# Test 15: Test with nested paths
+# Test: Test with nested paths
 test_nested_paths() {
-    echo -e "\n${YELLOW}Test: Test with nested paths${NC}"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${TEST_BUCKET} 2>/dev/null || true
+    test_header "Test with nested paths"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb "s3://${TEST_BUCKET}" 2>/dev/null || true
     echo "Nested content" > "${TEST_DATA_DIR}/nested.txt"
-    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp "${TEST_DATA_DIR}/nested.txt" s3://${TEST_BUCKET}/level1/level2/level3/nested.txt
-    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls s3://${TEST_BUCKET}/level1/level2/level3/ | grep -q "nested.txt"; then
-        echo -e "${GREEN}✓ Nested path upload successful${NC}"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 cp \
+        "${TEST_DATA_DIR}/nested.txt" "s3://${TEST_BUCKET}/level1/level2/level3/nested.txt"
+    
+    # Check for the full path
+    if aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 ls "s3://${TEST_BUCKET}/level1/level2/level3/" | grep -q "nested.txt"; then
+        assert_success "Nested path upload successful"
     else
-        echo -e "${RED}✗ Nested path upload failed${NC}"
-        exit 1
+        assert_failure "Nested path upload failed"
     fi
 }

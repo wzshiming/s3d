@@ -3,103 +3,23 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Load libraries
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/utils.sh"
+source "${SCRIPT_DIR}/lib/server.sh"
 
-# Configuration
-export AUTH_SERVER_PORT=9091
-export AUTH_SERVER_ADDR="http://localhost:${AUTH_SERVER_PORT}"
-export AUTH_TEST_BUCKET="test-auth-bucket-e2e"
-export AUTH_TEST_DATA_DIR=$(mktemp -d)
-export AUTH_SERVER_DATA_DIR=$(mktemp -d)
-export AUTH_SERVER_PID=""
+# Initialize auth test data directories
+export E2E_AUTH_TEST_DATA_DIR=$(create_temp_dir)
+export E2E_AUTH_SERVER_DATA_DIR=$(create_temp_dir)
 
-# Set restrictive permissions on temporary directories
-chmod 700 "${AUTH_TEST_DATA_DIR}"
-chmod 700 "${AUTH_SERVER_DATA_DIR}"
-
-# Test credentials
-export TEST_ACCESS_KEY="test-access-key-e2e"
-export TEST_SECRET_KEY="test-secret-key-e2e"
-
-# Cleanup function
-cleanup_auth() {
-    echo -e "\n${YELLOW}Cleaning up auth tests...${NC}"
-    if [ -n "$AUTH_SERVER_PID" ]; then
-        kill -TERM $AUTH_SERVER_PID 2>/dev/null || true
-        sleep 1
-        kill -KILL $AUTH_SERVER_PID 2>/dev/null || true
-        wait $AUTH_SERVER_PID 2>/dev/null || true
-    fi
-    rm -rf "${AUTH_TEST_DATA_DIR}"
-    rm -rf "${AUTH_SERVER_DATA_DIR}"
-}
-
-# Setup function
-setup_auth() {
-    echo -e "${YELLOW}Starting S3-compatible server with authentication...${NC}"
-    echo "Server address: ${AUTH_SERVER_ADDR}"
-    echo "Test data directory: ${AUTH_TEST_DATA_DIR}"
-    echo "Server data directory: ${AUTH_SERVER_DATA_DIR}"
-    echo "Access Key: ${TEST_ACCESS_KEY}"
-
-    trap cleanup_auth EXIT
-
-    # Build the server if not already built
-    if [ ! -f "./s3d" ]; then
-        echo -e "\n${YELLOW}Building server...${NC}"
-        go build -o ./s3d ./cmd/s3d
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}Failed to build server${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}Server built successfully${NC}"
-    fi
-
-    # Start the server with authentication
-    echo -e "\n${YELLOW}Starting server with authentication...${NC}"
-    ./s3d -addr ":${AUTH_SERVER_PORT}" -data "${AUTH_SERVER_DATA_DIR}" -credentials "${TEST_ACCESS_KEY}:${TEST_SECRET_KEY}" > /dev/null 2>&1 &
-    AUTH_SERVER_PID=$!
-    echo "Server PID: ${AUTH_SERVER_PID}"
-
-    # Wait for server to start
-    echo "Waiting for server to be ready..."
-    for i in {1..30}; do
-        if curl -s "${AUTH_SERVER_ADDR}" > /dev/null 2>&1; then
-            echo -e "${GREEN}Server is ready${NC}"
-            break
-        fi
-        if [ $i -eq 30 ]; then
-            echo -e "${RED}Server failed to start${NC}"
-            exit 1
-        fi
-        sleep 1
-    done
-
-    # Check if AWS CLI is installed
-    if ! command -v aws &> /dev/null; then
-        echo -e "${RED}AWS CLI is not installed. Please install it first.${NC}"
-        echo "See: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
-        exit 1
-    fi
-
-    echo -e "\n${YELLOW}AWS CLI version:${NC}"
-    aws --version
-
-    # Configure AWS CLI with test credentials
-    export AWS_ACCESS_KEY_ID=${TEST_ACCESS_KEY}
-    export AWS_SECRET_ACCESS_KEY=${TEST_SECRET_KEY}
-    export AWS_DEFAULT_REGION=us-east-1
-}
+# Setup cleanup trap
+trap cleanup_auth_server EXIT
 
 # Test 1: Request without credentials should fail
 test_auth_no_credentials() {
-    echo -e "\n${YELLOW}Test: Request without credentials (should fail)${NC}"
+    test_header "Request without credentials (should fail)"
     
     # Temporarily unset credentials
     local OLD_ACCESS_KEY=$AWS_ACCESS_KEY_ID
@@ -107,16 +27,14 @@ test_auth_no_credentials() {
     unset AWS_ACCESS_KEY_ID
     unset AWS_SECRET_ACCESS_KEY
     
-    # This should fail with authentication error (without --no-sign-request, it will try to sign with no credentials)
-    # We expect a 403 Forbidden error
-    if curl -s -o /dev/null -w "%{http_code}" "${AUTH_SERVER_ADDR}/" | grep -q "403"; then
-        echo -e "${GREEN}✓ Request correctly rejected without credentials${NC}"
+    # This should fail with authentication error
+    if curl -s -o /dev/null -w "%{http_code}" "${E2E_AUTH_SERVER_ADDR}/" | grep -q "403"; then
+        assert_success "Request correctly rejected without credentials"
     else
         # Restore credentials before exiting
         export AWS_ACCESS_KEY_ID=$OLD_ACCESS_KEY
         export AWS_SECRET_ACCESS_KEY=$OLD_SECRET_KEY
-        echo -e "${RED}✗ Request should have been rejected${NC}"
-        exit 1
+        assert_failure "Request should have been rejected"
     fi
     
     # Restore credentials
@@ -126,7 +44,7 @@ test_auth_no_credentials() {
 
 # Test 2: Request with wrong credentials should fail
 test_auth_wrong_credentials() {
-    echo -e "\n${YELLOW}Test: Request with wrong credentials (should fail)${NC}"
+    test_header "Request with wrong credentials (should fail)"
     
     # Temporarily use wrong credentials
     local OLD_ACCESS_KEY=$AWS_ACCESS_KEY_ID
@@ -135,14 +53,13 @@ test_auth_wrong_credentials() {
     export AWS_SECRET_ACCESS_KEY="wrong-secret-key"
     
     # This should fail with authentication error
-    if aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls 2>&1 | grep -q "403\|Forbidden\|SignatureDoesNotMatch"; then
-        echo -e "${GREEN}✓ Request correctly rejected with wrong credentials${NC}"
+    if aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 ls 2>&1 | grep -q "403\|Forbidden\|SignatureDoesNotMatch"; then
+        assert_success "Request correctly rejected with wrong credentials"
     else
         # Restore credentials before exiting
         export AWS_ACCESS_KEY_ID=$OLD_ACCESS_KEY
         export AWS_SECRET_ACCESS_KEY=$OLD_SECRET_KEY
-        echo -e "${RED}✗ Request should have been rejected${NC}"
-        exit 1
+        assert_failure "Request should have been rejected"
     fi
     
     # Restore credentials
@@ -152,81 +69,84 @@ test_auth_wrong_credentials() {
 
 # Test 3: Request with valid credentials should succeed
 test_auth_valid_credentials() {
-    echo -e "\n${YELLOW}Test: Request with valid credentials (should succeed)${NC}"
+    test_header "Request with valid credentials (should succeed)"
     
-    # This should succeed
-    if aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Request succeeded with valid credentials${NC}"
+    if aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 ls > /dev/null 2>&1; then
+        assert_success "Request succeeded with valid credentials"
     else
-        echo -e "${RED}✗ Request should have succeeded${NC}"
-        exit 1
+        assert_failure "Request should have succeeded"
     fi
 }
 
 # Test 4: Create bucket with authentication
 test_auth_create_bucket() {
-    echo -e "\n${YELLOW}Test: Create bucket with authentication${NC}"
-    aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 mb s3://${AUTH_TEST_BUCKET}
-    echo -e "${GREEN}✓ Bucket created with authentication${NC}"
+    test_header "Create bucket with authentication"
+    aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 mb "s3://${E2E_AUTH_TEST_BUCKET}"
+    assert_success "Bucket created with authentication"
 }
 
 # Test 5: Upload object with authentication
 test_auth_upload_object() {
-    echo -e "\n${YELLOW}Test: Upload object with authentication${NC}"
-    echo "Test content with auth" > "${AUTH_TEST_DATA_DIR}/test-file.txt"
-    aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 cp "${AUTH_TEST_DATA_DIR}/test-file.txt" s3://${AUTH_TEST_BUCKET}/test-file.txt
-    echo -e "${GREEN}✓ Object uploaded with authentication${NC}"
+    test_header "Upload object with authentication"
+    echo "Test content with auth" > "${E2E_AUTH_TEST_DATA_DIR}/test-file.txt"
+    aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 cp \
+        "${E2E_AUTH_TEST_DATA_DIR}/test-file.txt" "s3://${E2E_AUTH_TEST_BUCKET}/test-file.txt"
+    assert_success "Object uploaded with authentication"
 }
 
 # Test 6: Download object with authentication
 test_auth_download_object() {
-    echo -e "\n${YELLOW}Test: Download object with authentication${NC}"
-    aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 cp s3://${AUTH_TEST_BUCKET}/test-file.txt "${AUTH_TEST_DATA_DIR}/downloaded.txt"
+    test_header "Download object with authentication"
+    aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 cp \
+        "s3://${E2E_AUTH_TEST_BUCKET}/test-file.txt" "${E2E_AUTH_TEST_DATA_DIR}/downloaded.txt"
     
-    if diff "${AUTH_TEST_DATA_DIR}/test-file.txt" "${AUTH_TEST_DATA_DIR}/downloaded.txt" > /dev/null; then
-        echo -e "${GREEN}✓ Object downloaded correctly with authentication${NC}"
+    if files_match "${E2E_AUTH_TEST_DATA_DIR}/test-file.txt" "${E2E_AUTH_TEST_DATA_DIR}/downloaded.txt"; then
+        assert_success "Object downloaded correctly with authentication"
     else
-        echo -e "${RED}✗ Downloaded content doesn't match${NC}"
-        exit 1
+        assert_failure "Downloaded content doesn't match"
     fi
 }
 
 # Test 7: List objects with authentication
 test_auth_list_objects() {
-    echo -e "\n${YELLOW}Test: List objects with authentication${NC}"
-    OBJECTS=$(aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls s3://${AUTH_TEST_BUCKET}/)
-    if echo "$OBJECTS" | grep -q "test-file.txt"; then
-        echo -e "${GREEN}✓ Objects listed successfully with authentication${NC}"
+    test_header "List objects with authentication"
+    if object_exists "${E2E_AUTH_SERVER_ADDR}" "${E2E_AUTH_TEST_BUCKET}" "test-file.txt" "yes"; then
+        assert_success "Objects listed successfully with authentication"
     else
-        echo -e "${RED}✗ Object not found in list${NC}"
-        exit 1
+        assert_failure "Object not found in list"
     fi
 }
 
 # Test 8: Delete object with authentication
 test_auth_delete_object() {
-    echo -e "\n${YELLOW}Test: Delete object with authentication${NC}"
-    aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 rm s3://${AUTH_TEST_BUCKET}/test-file.txt
-    echo -e "${GREEN}✓ Object deleted with authentication${NC}"
+    test_header "Delete object with authentication"
+    aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 rm "s3://${E2E_AUTH_TEST_BUCKET}/test-file.txt"
+    assert_success "Object deleted with authentication"
 }
 
 # Test 9: Delete bucket with authentication
 test_auth_delete_bucket() {
-    echo -e "\n${YELLOW}Test: Delete bucket with authentication${NC}"
-    aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 rb s3://${AUTH_TEST_BUCKET}
-    BUCKETS=$(aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls)
-    if ! echo "$BUCKETS" | grep -q "${AUTH_TEST_BUCKET}"; then
-        echo -e "${GREEN}✓ Bucket deleted with authentication${NC}"
+    test_header "Delete bucket with authentication"
+    aws --endpoint-url="${E2E_AUTH_SERVER_ADDR}" s3 rb "s3://${E2E_AUTH_TEST_BUCKET}"
+    
+    if ! bucket_exists "${E2E_AUTH_SERVER_ADDR}" "${E2E_AUTH_TEST_BUCKET}" "yes"; then
+        assert_success "Bucket deleted with authentication"
     else
-        echo -e "${RED}✗ Bucket still exists${NC}"
-        exit 1
+        assert_failure "Bucket still exists"
     fi
 }
 
 # Main execution
 main() {
-    setup_auth
+    section_header "AWS Signature V4 Authentication Tests"
     
+    # Verify AWS CLI
+    verify_aws_cli
+    
+    # Start auth server
+    start_auth_server || exit 1
+    
+    # Run tests
     test_auth_no_credentials
     test_auth_wrong_credentials
     test_auth_valid_credentials
@@ -237,9 +157,7 @@ main() {
     test_auth_delete_object
     test_auth_delete_bucket
     
-    echo -e "\n${GREEN}========================================${NC}"
-    echo -e "${GREEN}All authentication e2e tests passed!${NC}"
-    echo -e "${GREEN}========================================${NC}"
+    section_success "All authentication e2e tests passed!"
 }
 
 # Run if executed directly
