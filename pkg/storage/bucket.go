@@ -2,6 +2,7 @@ package storage
 
 import (
 	"os"
+	"strings"
 )
 
 // CreateBucket creates a new bucket
@@ -32,8 +33,8 @@ func (s *Storage) DeleteBucket(bucket string) error {
 	return os.RemoveAll(bucketPath)
 }
 
-// ListBuckets lists all buckets
-func (s *Storage) ListBuckets() ([]BucketInfo, error) {
+// ListBuckets lists all buckets with pagination support
+func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) ([]BucketInfo, error) {
 	entries, err := os.ReadDir(s.basePath)
 	if err != nil {
 		return nil, err
@@ -48,6 +49,17 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 		if sanitizeBucketName(name) != nil {
 			continue
 		}
+		
+		// Filter by prefix if provided
+		if prefix != "" && !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		
+		// Skip buckets before continuationToken (for pagination)
+		if continuationToken != "" && name <= continuationToken {
+			continue
+		}
+		
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -56,6 +68,11 @@ func (s *Storage) ListBuckets() ([]BucketInfo, error) {
 			Name:    name,
 			ModTime: info.ModTime(),
 		})
+		
+		// Stop if we've reached maxBuckets (fetch one extra to determine if truncated)
+		if maxBuckets > 0 && len(buckets) >= maxBuckets {
+			break
+		}
 	}
 	return buckets, nil
 }

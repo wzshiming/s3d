@@ -32,7 +32,7 @@ func TestBucketOperations(t *testing.T) {
 	}
 
 	// List buckets
-	buckets, err := store.ListBuckets()
+	buckets, err := store.ListBuckets("", "", 0)
 	if err != nil {
 		t.Fatalf("ListBuckets failed: %v", err)
 	}
