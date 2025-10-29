@@ -55,20 +55,13 @@ func createServer(cfg *Config) (http.Handler, error) {
 		server.WithRegion(cfg.Region),
 	}
 	
-	// Add access log options if configured
-	var logOpts []accesslog.Option
-	if cfg.LogCacheTTL > 0 {
-		logOpts = append(logOpts, accesslog.WithCacheTTL(cfg.LogCacheTTL))
+	// Add access log options - always configure with user-specified values
+	logOpts := []accesslog.Option{
+		accesslog.WithCacheTTL(cfg.LogCacheTTL),
+		accesslog.WithMaxBufferSize(cfg.LogMaxBufferSize),
+		accesslog.WithFlushInterval(cfg.LogFlushInterval),
 	}
-	if cfg.LogMaxBufferSize > 0 {
-		logOpts = append(logOpts, accesslog.WithMaxBufferSize(cfg.LogMaxBufferSize))
-	}
-	if cfg.LogFlushInterval > 0 {
-		logOpts = append(logOpts, accesslog.WithFlushInterval(cfg.LogFlushInterval))
-	}
-	if len(logOpts) > 0 {
-		opts = append(opts, server.WithAccessLogOptions(logOpts...))
-	}
+	opts = append(opts, server.WithAccessLogOptions(logOpts...))
 	
 	s := server.NewS3Handler(store, opts...)
 	if cfg.Credentials == "" {
@@ -92,9 +85,9 @@ func main() {
 	dataDir := flag.String("data", "./data", "Data directory for storage")
 	credentials := flag.String("credentials", "", "Credentials in format accessKeyID:secretAccessKey (can specify multiple separated by comma)")
 	region := flag.String("region", "us-east-1", "AWS region name")
-	logCacheTTL := flag.Duration("log-cache-ttl", 0, "Cache TTL for bucket logging configurations (default: 5m)")
-	logMaxBufferSize := flag.Int("log-max-buffer-size", 0, "Maximum number of log entries to buffer before flushing (default: 100)")
-	logFlushInterval := flag.Duration("log-flush-interval", 0, "Interval for automatic log flushing (default: 1h)")
+	logCacheTTL := flag.Duration("accesslog-config-ttl", time.Minute, "Cache TTL for bucket logging configurations")
+	logMaxBufferSize := flag.Int("accesslog-max-buffer-size", 100, "Maximum number of log entries to buffer before flushing")
+	logFlushInterval := flag.Duration("accesslog-flush-interval", time.Minute, "Interval for automatic log flushing")
 	flag.Parse()
 
 	cfg := &Config{
@@ -121,19 +114,11 @@ func main() {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
 	}
 	
-	// Log access log configuration if customized
-	if cfg.LogCacheTTL > 0 || cfg.LogMaxBufferSize > 0 || cfg.LogFlushInterval > 0 {
-		log.Printf("Access log configuration:")
-		if cfg.LogCacheTTL > 0 {
-			log.Printf("  Cache TTL: %v", cfg.LogCacheTTL)
-		}
-		if cfg.LogMaxBufferSize > 0 {
-			log.Printf("  Max buffer size: %d", cfg.LogMaxBufferSize)
-		}
-		if cfg.LogFlushInterval > 0 {
-			log.Printf("  Flush interval: %v", cfg.LogFlushInterval)
-		}
-	}
+	// Log access log configuration
+	log.Printf("Access log configuration:")
+	log.Printf("  Cache TTL: %v", cfg.LogCacheTTL)
+	log.Printf("  Max buffer size: %d", cfg.LogMaxBufferSize)
+	log.Printf("  Flush interval: %v", cfg.LogFlushInterval)
 
 	handler = handlers.CombinedLoggingHandler(log.Writer(), handler)
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
