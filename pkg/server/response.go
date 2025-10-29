@@ -4,8 +4,6 @@ import (
 	"encoding/xml"
 	"net/http"
 	"strings"
-
-	"github.com/wzshiming/s3d/pkg/s3types"
 )
 
 // urlSafeToStdBase64 converts URL-safe base64 encoding to standard base64 encoding.
@@ -36,7 +34,7 @@ func (s *S3Handler) xmlResponse(w http.ResponseWriter, data any, status int) {
 
 // errorResponse writes an error response
 func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, message string, status int) {
-	err := s3types.Error{
+	err := Error{
 		Code:    code,
 		Message: message,
 	}

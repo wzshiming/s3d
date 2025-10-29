@@ -1,4 +1,4 @@
-package s3types
+package server
 
 import (
 	"encoding/xml"

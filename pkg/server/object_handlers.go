@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -89,21 +88,21 @@ func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Parse the request body
-	var deleteReq s3types.Delete
+	var deleteReq Delete
 	if err := xml.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
 		s.errorResponse(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
 		return
 	}
 
 	// Process deletions
-	result := s3types.DeleteObjectsResult{}
+	result := DeleteObjectsResult{}
 
 	for _, obj := range deleteReq.Objects {
 		err := s.storage.DeleteObject(bucket, obj.Key)
 
 		if err != nil && err != storage.ErrObjectNotFound {
 			// Add to errors list
-			result.Errors = append(result.Errors, s3types.DeleteError{
+			result.Errors = append(result.Errors, DeleteError{
 				Key:     obj.Key,
 				Code:    "InternalError",
 				Message: err.Error(),
@@ -111,7 +110,7 @@ func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, 
 		} else {
 			// Successfully deleted (or object didn't exist, which is also considered success in S3)
 			if !deleteReq.Quiet {
-				result.Deleted = append(result.Deleted, s3types.DeletedObject{
+				result.Deleted = append(result.Deleted, DeletedObject{
 					Key: obj.Key,
 				})
 			}
@@ -157,7 +156,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 		return
 	}
 
-	result := s3types.CopyObjectResult{
+	result := CopyObjectResult{
 		LastModified: objInfo.ModTime.UTC(),
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
@@ -255,7 +254,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		}
 	}
 
-	result := s3types.ListBucketResult{
+	result := ListBucketResult{
 		Name:        bucket,
 		Prefix:      prefix,
 		Marker:      marker,
@@ -269,7 +268,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	for _, obj := range objects {
-		result.Contents = append(result.Contents, s3types.Contents{
+		result.Contents = append(result.Contents, Contents{
 			Key:          obj.Key,
 			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
@@ -279,7 +278,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	for _, cp := range commonPrefixes {
-		result.CommonPrefixes = append(result.CommonPrefixes, s3types.CommonPrefix{
+		result.CommonPrefixes = append(result.CommonPrefixes, CommonPrefix{
 			Prefix: cp,
 		})
 	}
@@ -332,7 +331,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	result := s3types.ListBucketResultV2{
+	result := ListBucketResultV2{
 		Name:              bucket,
 		Prefix:            prefix,
 		Delimiter:         delimiter,
@@ -348,7 +347,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	}
 
 	for _, obj := range objects {
-		result.Contents = append(result.Contents, s3types.Contents{
+		result.Contents = append(result.Contents, Contents{
 			Key:          obj.Key,
 			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
@@ -358,7 +357,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	}
 
 	for _, cp := range commonPrefixes {
-		result.CommonPrefixes = append(result.CommonPrefixes, s3types.CommonPrefix{
+		result.CommonPrefixes = append(result.CommonPrefixes, CommonPrefix{
 			Prefix: cp,
 		})
 	}

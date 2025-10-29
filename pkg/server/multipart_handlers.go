@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -29,7 +28,7 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 		return
 	}
 
-	result := s3types.InitiateMultipartUploadResult{
+	result := InitiateMultipartUploadResult{
 		Bucket:   bucket,
 		Key:      key,
 		UploadId: uploadID,
@@ -119,7 +118,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	result := s3types.CopyPartResult{
+	result := CopyPartResult{
 		LastModified: objInfo.ModTime.UTC(),
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
@@ -129,7 +128,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 
 // handleCompleteMultipartUpload handles CompleteMultipartUpload operation
 func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
-	var req s3types.CompleteMultipartUpload
+	var req CompleteMultipartUpload
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, r, "MalformedXML", "Invalid XML", http.StatusBadRequest)
 		return
@@ -162,7 +161,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		return
 	}
 
-	result := s3types.CompleteMultipartUploadResult{
+	result := CompleteMultipartUploadResult{
 		Location: fmt.Sprintf("/%s/%s", bucket, key),
 		Bucket:   bucket,
 		Key:      key,
@@ -227,7 +226,7 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	result := s3types.ListMultipartUploadsResult{
+	result := ListMultipartUploadsResult{
 		Bucket:      bucket,
 		MaxUploads:  maxUploads,
 		IsTruncated: isTruncated,
@@ -244,7 +243,7 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 	}
 
 	for _, upload := range uploads {
-		result.Uploads = append(result.Uploads, s3types.Upload{
+		result.Uploads = append(result.Uploads, Upload{
 			Key:          upload.Key,
 			UploadId:     upload.UploadID,
 			Initiated:    upload.ModTime,
@@ -297,7 +296,7 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 		}
 	}
 
-	result := s3types.ListPartsResult{
+	result := ListPartsResult{
 		Bucket:       bucket,
 		Key:          key,
 		UploadId:     uploadID,
@@ -315,7 +314,7 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	for _, part := range parts {
-		result.Parts = append(result.Parts, s3types.CompletedPart{
+		result.Parts = append(result.Parts, CompletedPart{
 			PartNumber:   part.PartNumber,
 			LastModified: part.ModTime,
 			ETag:         fmt.Sprintf("%q", part.ETag),

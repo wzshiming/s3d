@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 
-	"github.com/wzshiming/s3d/pkg/s3types"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -15,15 +14,15 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := s3types.ListAllMyBucketsResult{
-		Owner: s3types.Owner{
+	result := ListAllMyBucketsResult{
+		Owner: Owner{
 			ID:          "local-user",
 			DisplayName: "local-user",
 		},
 	}
 
 	for _, b := range buckets {
-		result.Buckets.Bucket = append(result.Buckets.Bucket, s3types.Bucket{
+		result.Buckets.Bucket = append(result.Buckets.Bucket, Bucket{
 			Name:         b.Name,
 			CreationDate: b.ModTime,
 		})
