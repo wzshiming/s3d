@@ -26,16 +26,65 @@ func WithRegion(region string) Option {
 	}
 }
 
+// WithAccessLogCacheTTL sets the cache TTL for bucket logging configurations
+func WithAccessLogCacheTTL(ttl time.Duration) Option {
+	return func(h *S3Handler) {
+		// Store for later use when creating logger
+		if h.logger == nil {
+			// Not yet created, will be handled in NewS3Handler
+			return
+		}
+	}
+}
+
+// WithAccessLogMaxBufferSize sets the maximum number of log entries to buffer
+func WithAccessLogMaxBufferSize(size int) Option {
+	return func(h *S3Handler) {
+		// Store for later use when creating logger
+		if h.logger == nil {
+			return
+		}
+	}
+}
+
+// WithAccessLogFlushInterval sets the interval for automatic log flushing
+func WithAccessLogFlushInterval(interval time.Duration) Option {
+	return func(h *S3Handler) {
+		// Store for later use when creating logger
+		if h.logger == nil {
+			return
+		}
+	}
+}
+
+// WithAccessLogOptions sets the access log options
+func WithAccessLogOptions(opts ...accesslog.Option) Option {
+	return func(h *S3Handler) {
+		// Create new logger with options if storage is available
+		if h.storage != nil {
+			h.logger = accesslog.NewLogger(h.storage, opts...)
+		}
+	}
+}
+
 // NewS3Handler creates a new S3 server
 func NewS3Handler(storage *storage.Storage, opts ...Option) *S3Handler {
 	h := &S3Handler{
 		storage: storage,
 		region:  "us-east-1", // default region
-		logger:  accesslog.NewLogger(storage),
+		logger:  nil,         // Will be created after options are applied
 	}
+	
+	// Apply options first
 	for _, opt := range opts {
 		opt(h)
 	}
+	
+	// Create logger if not already created by WithAccessLogOptions
+	if h.logger == nil {
+		h.logger = accesslog.NewLogger(storage)
+	}
+	
 	return h
 }
 

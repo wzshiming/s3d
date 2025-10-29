@@ -5,8 +5,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
+	"github.com/wzshiming/s3d/pkg/accesslog"
 	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/server"
 	"github.com/wzshiming/s3d/pkg/storage"
@@ -14,10 +16,13 @@ import (
 
 // Config holds the server configuration
 type Config struct {
-	Addr        string
-	DataDir     string
-	Credentials string
-	Region      string
+	Addr                  string
+	DataDir               string
+	Credentials           string
+	Region                string
+	LogCacheTTL           time.Duration
+	LogMaxBufferSize      int
+	LogFlushInterval      time.Duration
 }
 
 // parseCredentials parses comma-separated credentials and adds them to the authenticator
@@ -44,7 +49,28 @@ func createServer(cfg *Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := server.NewS3Handler(store, server.WithRegion(cfg.Region))
+	
+	// Create server options
+	opts := []server.Option{
+		server.WithRegion(cfg.Region),
+	}
+	
+	// Add access log options if configured
+	var logOpts []accesslog.Option
+	if cfg.LogCacheTTL > 0 {
+		logOpts = append(logOpts, accesslog.WithCacheTTL(cfg.LogCacheTTL))
+	}
+	if cfg.LogMaxBufferSize > 0 {
+		logOpts = append(logOpts, accesslog.WithMaxBufferSize(cfg.LogMaxBufferSize))
+	}
+	if cfg.LogFlushInterval > 0 {
+		logOpts = append(logOpts, accesslog.WithFlushInterval(cfg.LogFlushInterval))
+	}
+	if len(logOpts) > 0 {
+		opts = append(opts, server.WithAccessLogOptions(logOpts...))
+	}
+	
+	s := server.NewS3Handler(store, opts...)
 	if cfg.Credentials == "" {
 		return s, nil
 	}
@@ -66,13 +92,19 @@ func main() {
 	dataDir := flag.String("data", "./data", "Data directory for storage")
 	credentials := flag.String("credentials", "", "Credentials in format accessKeyID:secretAccessKey (can specify multiple separated by comma)")
 	region := flag.String("region", "us-east-1", "AWS region name")
+	logCacheTTL := flag.Duration("log-cache-ttl", 0, "Cache TTL for bucket logging configurations (default: 5m)")
+	logMaxBufferSize := flag.Int("log-max-buffer-size", 0, "Maximum number of log entries to buffer before flushing (default: 100)")
+	logFlushInterval := flag.Duration("log-flush-interval", 0, "Interval for automatic log flushing (default: 1h)")
 	flag.Parse()
 
 	cfg := &Config{
-		Addr:        *addr,
-		DataDir:     *dataDir,
-		Credentials: *credentials,
-		Region:      *region,
+		Addr:             *addr,
+		DataDir:          *dataDir,
+		Credentials:      *credentials,
+		Region:           *region,
+		LogCacheTTL:      *logCacheTTL,
+		LogMaxBufferSize: *logMaxBufferSize,
+		LogFlushInterval: *logFlushInterval,
 	}
 
 	handler, err := createServer(cfg)
@@ -87,6 +119,20 @@ func main() {
 
 	if cfg.Credentials == "" {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
+	}
+	
+	// Log access log configuration if customized
+	if cfg.LogCacheTTL > 0 || cfg.LogMaxBufferSize > 0 || cfg.LogFlushInterval > 0 {
+		log.Printf("Access log configuration:")
+		if cfg.LogCacheTTL > 0 {
+			log.Printf("  Cache TTL: %v", cfg.LogCacheTTL)
+		}
+		if cfg.LogMaxBufferSize > 0 {
+			log.Printf("  Max buffer size: %d", cfg.LogMaxBufferSize)
+		}
+		if cfg.LogFlushInterval > 0 {
+			log.Printf("  Flush interval: %v", cfg.LogFlushInterval)
+		}
 	}
 
 	handler = handlers.CombinedLoggingHandler(log.Writer(), handler)

@@ -52,26 +52,14 @@ const (
 	DefaultFlushInterval = 1 * time.Hour
 )
 
-// Config holds configuration for the Logger
-type Config struct {
-	CacheTTL      time.Duration // How long to cache bucket logging configurations
-	MaxBufferSize int           // Maximum number of log entries to buffer before flushing
-	FlushInterval time.Duration // How often to flush logs regardless of buffer size
-}
-
-// DefaultConfig returns the default configuration
-func DefaultConfig() *Config {
-	return &Config{
-		CacheTTL:      DefaultCacheTTL,
-		MaxBufferSize: DefaultMaxBufferSize,
-		FlushInterval: DefaultFlushInterval,
-	}
-}
-
 // Logger handles access logging with caching and batching
 type Logger struct {
 	storage *storage.Storage
-	config  *Config
+
+	// Configuration
+	cacheTTL      time.Duration
+	maxBufferSize int
+	flushInterval time.Duration
 
 	// In-memory cache for disk-based bucket logging configurations
 	configCache map[string]*cachedLoggingConfig
@@ -89,21 +77,47 @@ type Logger struct {
 	closeMu   sync.Mutex
 }
 
-// NewLogger creates a new access logger with default configuration
-func NewLogger(storage *storage.Storage) *Logger {
-	return NewLoggerWithConfig(storage, DefaultConfig())
+// Option is a functional option for configuring Logger
+type Option func(*Logger)
+
+// WithCacheTTL sets the cache TTL for bucket logging configurations
+func WithCacheTTL(ttl time.Duration) Option {
+	return func(l *Logger) {
+		l.cacheTTL = ttl
+	}
 }
 
-// NewLoggerWithConfig creates a new access logger with custom configuration
-func NewLoggerWithConfig(storage *storage.Storage, config *Config) *Logger {
+// WithMaxBufferSize sets the maximum number of log entries to buffer before flushing
+func WithMaxBufferSize(size int) Option {
+	return func(l *Logger) {
+		l.maxBufferSize = size
+	}
+}
+
+// WithFlushInterval sets the interval for automatic log flushing
+func WithFlushInterval(interval time.Duration) Option {
+	return func(l *Logger) {
+		l.flushInterval = interval
+	}
+}
+
+// NewLogger creates a new access logger with optional configuration
+func NewLogger(storage *storage.Storage, opts ...Option) *Logger {
 	logger := &Logger{
-		storage:     storage,
-		config:      config,
-		configCache: make(map[string]*cachedLoggingConfig),
-		buffers:     make(map[string]*logBuffer),
-		stopChan:    make(chan struct{}),
-		flushDone:   make(chan struct{}),
-		closed:      false,
+		storage:       storage,
+		cacheTTL:      DefaultCacheTTL,
+		maxBufferSize: DefaultMaxBufferSize,
+		flushInterval: DefaultFlushInterval,
+		configCache:   make(map[string]*cachedLoggingConfig),
+		buffers:       make(map[string]*logBuffer),
+		stopChan:      make(chan struct{}),
+		flushDone:     make(chan struct{}),
+		closed:        false,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(logger)
 	}
 
 	// Start background log flusher
@@ -198,7 +212,7 @@ func (l *Logger) getCachedConfig(bucket string) *storage.LoggingConfig {
 		l.cacheMu.Lock()
 		l.configCache[bucket] = &cachedLoggingConfig{
 			config:    nil,
-			expiresAt: time.Now().Add(l.config.CacheTTL),
+			expiresAt: time.Now().Add(l.cacheTTL),
 		}
 		l.cacheMu.Unlock()
 		return nil
@@ -208,7 +222,7 @@ func (l *Logger) getCachedConfig(bucket string) *storage.LoggingConfig {
 	l.cacheMu.Lock()
 	l.configCache[bucket] = &cachedLoggingConfig{
 		config:    config,
-		expiresAt: time.Now().Add(l.config.CacheTTL),
+		expiresAt: time.Now().Add(l.cacheTTL),
 	}
 	l.cacheMu.Unlock()
 
@@ -224,7 +238,7 @@ func (l *Logger) addToBuffer(bucket string, config *storage.LoggingConfig, logLi
 	buffer, exists := l.buffers[bucket]
 	if !exists {
 		buffer = &logBuffer{
-			entries:       make([]string, 0, l.config.MaxBufferSize),
+			entries:       make([]string, 0, l.maxBufferSize),
 			targetBucket:  config.TargetBucket,
 			targetPrefix:  config.TargetPrefix,
 			lastFlushTime: time.Now(),
@@ -236,8 +250,8 @@ func (l *Logger) addToBuffer(bucket string, config *storage.LoggingConfig, logLi
 	buffer.entries = append(buffer.entries, logLine)
 
 	// Check if we need to flush
-	shouldFlush := len(buffer.entries) >= l.config.MaxBufferSize ||
-		time.Since(buffer.lastFlushTime) >= l.config.FlushInterval
+	shouldFlush := len(buffer.entries) >= l.maxBufferSize ||
+		time.Since(buffer.lastFlushTime) >= l.flushInterval
 
 	if shouldFlush {
 		l.flushBuffer(bucket, buffer)
@@ -336,7 +350,7 @@ func (l *Logger) flushBufferSync(bucket string, buffer *logBuffer) {
 
 // startFlusher starts a background goroutine that periodically flushes log buffers
 func (l *Logger) startFlusher() {
-	l.ticker = time.NewTicker(l.config.FlushInterval)
+	l.ticker = time.NewTicker(l.flushInterval)
 	go func() {
 		defer close(l.flushDone)
 		for {
@@ -357,7 +371,7 @@ func (l *Logger) flushAll() {
 	defer l.bufferMu.Unlock()
 
 	for bucket, buffer := range l.buffers {
-		if time.Since(buffer.lastFlushTime) >= l.config.FlushInterval {
+		if time.Since(buffer.lastFlushTime) >= l.flushInterval {
 			l.flushBuffer(bucket, buffer)
 		}
 	}

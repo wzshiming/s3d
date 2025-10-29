@@ -10,16 +10,29 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	config := DefaultConfig()
-	if config.CacheTTL != DefaultCacheTTL {
-		t.Errorf("Expected CacheTTL %v, got %v", DefaultCacheTTL, config.CacheTTL)
+func TestDefaultValues(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "accesslog-test-*")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if config.MaxBufferSize != DefaultMaxBufferSize {
-		t.Errorf("Expected MaxBufferSize %d, got %d", DefaultMaxBufferSize, config.MaxBufferSize)
+	defer os.RemoveAll(tmpDir)
+
+	store, err := storage.NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if config.FlushInterval != DefaultFlushInterval {
-		t.Errorf("Expected FlushInterval %v, got %v", DefaultFlushInterval, config.FlushInterval)
+
+	logger := NewLogger(store)
+	defer logger.Close()
+
+	if logger.cacheTTL != DefaultCacheTTL {
+		t.Errorf("Expected default CacheTTL %v, got %v", DefaultCacheTTL, logger.cacheTTL)
+	}
+	if logger.maxBufferSize != DefaultMaxBufferSize {
+		t.Errorf("Expected default MaxBufferSize %d, got %d", DefaultMaxBufferSize, logger.maxBufferSize)
+	}
+	if logger.flushInterval != DefaultFlushInterval {
+		t.Errorf("Expected default FlushInterval %v, got %v", DefaultFlushInterval, logger.flushInterval)
 	}
 }
 
@@ -42,9 +55,6 @@ func TestNewLogger(t *testing.T) {
 	if logger.storage != store {
 		t.Error("Logger storage not set correctly")
 	}
-	if logger.config == nil {
-		t.Error("Logger config not set")
-	}
 	if logger.configCache == nil {
 		t.Error("Logger configCache not initialized")
 	}
@@ -56,7 +66,7 @@ func TestNewLogger(t *testing.T) {
 	logger.Close()
 }
 
-func TestNewLoggerWithConfig(t *testing.T) {
+func TestNewLoggerWithOptions(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "accesslog-test-*")
 	if err != nil {
 		t.Fatal(err)
@@ -68,24 +78,22 @@ func TestNewLoggerWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	config := &Config{
-		CacheTTL:      1 * time.Minute,
-		MaxBufferSize: 50,
-		FlushInterval: 30 * time.Minute,
-	}
-
-	logger := NewLoggerWithConfig(store, config)
+	logger := NewLogger(store,
+		WithCacheTTL(1*time.Minute),
+		WithMaxBufferSize(50),
+		WithFlushInterval(30*time.Minute),
+	)
 	if logger == nil {
 		t.Fatal("Expected logger to be created")
 	}
-	if logger.config.CacheTTL != config.CacheTTL {
-		t.Errorf("Expected CacheTTL %v, got %v", config.CacheTTL, logger.config.CacheTTL)
+	if logger.cacheTTL != 1*time.Minute {
+		t.Errorf("Expected CacheTTL 1m, got %v", logger.cacheTTL)
 	}
-	if logger.config.MaxBufferSize != config.MaxBufferSize {
-		t.Errorf("Expected MaxBufferSize %d, got %d", config.MaxBufferSize, logger.config.MaxBufferSize)
+	if logger.maxBufferSize != 50 {
+		t.Errorf("Expected MaxBufferSize 50, got %d", logger.maxBufferSize)
 	}
-	if logger.config.FlushInterval != config.FlushInterval {
-		t.Errorf("Expected FlushInterval %v, got %v", config.FlushInterval, logger.config.FlushInterval)
+	if logger.flushInterval != 30*time.Minute {
+		t.Errorf("Expected FlushInterval 30m, got %v", logger.flushInterval)
 	}
 
 	// Clean up
