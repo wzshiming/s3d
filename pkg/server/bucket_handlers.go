@@ -2,16 +2,42 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
 // handleListBuckets handles ListBuckets operation
 func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
-	buckets, err := s.storage.ListBuckets()
+	query := r.URL.Query()
+	
+	// Parse pagination parameters
+	prefix := query.Get("prefix")
+	continuationToken := query.Get("continuation-token")
+	maxBuckets := 10000 // AWS default
+	if mb := query.Get("max-buckets"); mb != "" {
+		if parsed, err := strconv.Atoi(mb); err == nil && parsed > 0 {
+			maxBuckets = parsed
+		}
+	}
+	
+	// Fetch one extra bucket to determine if there are more results
+	buckets, err := s.storage.ListBuckets(prefix, continuationToken, maxBuckets+1)
 	if err != nil {
 		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		return
+	}
+	
+	// Determine if results are truncated
+	isTruncated := len(buckets) > maxBuckets
+	var nextContinuationToken string
+	if isTruncated {
+		// Remove the extra bucket
+		buckets = buckets[:maxBuckets]
+		// Set next continuation token to the last bucket name
+		if len(buckets) > 0 {
+			nextContinuationToken = buckets[len(buckets)-1].Name
+		}
 	}
 
 	result := ListAllMyBucketsResult{
@@ -19,6 +45,11 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 			ID:          "local-user",
 			DisplayName: "local-user",
 		},
+		Prefix: prefix,
+	}
+	
+	if isTruncated {
+		result.ContinuationToken = nextContinuationToken
 	}
 
 	for _, b := range buckets {
