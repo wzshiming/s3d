@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/bucket_pagination_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
+source "${SCRIPT_DIR}/headbucket_ownership_tests.sh"
 
 # Run setup
 setup
@@ -21,6 +22,13 @@ test_list_buckets
 
 # Run bucket pagination tests
 run_bucket_pagination_tests
+
+# Run HeadBucket and ownership tests
+test_head_bucket_region
+test_get_ownership_default
+test_put_ownership
+test_delete_ownership
+test_region_header_in_all_responses
 
 # Run object tests
 test_upload_file

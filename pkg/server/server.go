@@ -44,10 +44,16 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		switch r.Method {
 		case http.MethodPut:
-			s.handleCreateBucket(w, r, bucket)
+			if query.Has("ownershipControls") {
+				s.handlePutBucketOwnershipControls(w, r, bucket)
+			} else {
+				s.handleCreateBucket(w, r, bucket)
+			}
 		case http.MethodGet:
 			if query.Has("uploads") {
 				s.handleListMultipartUploads(w, r, bucket)
+			} else if query.Has("ownershipControls") {
+				s.handleGetBucketOwnershipControls(w, r, bucket)
 			} else {
 				s.handleListObjects(w, r, bucket)
 			}
@@ -58,7 +64,11 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 			}
 		case http.MethodDelete:
-			s.handleDeleteBucket(w, r, bucket)
+			if query.Has("ownershipControls") {
+				s.handleDeleteBucketOwnershipControls(w, r, bucket)
+			} else {
+				s.handleDeleteBucket(w, r, bucket)
+			}
 		case http.MethodHead:
 			s.handleHeadBucket(w, r, bucket)
 		default:

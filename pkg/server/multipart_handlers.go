@@ -68,6 +68,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -186,6 +187,7 @@ func (s *S3Handler) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusNoContent)
 }
 

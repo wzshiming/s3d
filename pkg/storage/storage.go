@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	dataFile   = "data"
-	metaFile   = "meta"
-	uploadsDir = ".uploads"
-	tempDir    = ".temp"
+	dataFile       = "data"
+	metaFile       = "meta"
+	bucketMetaFile = ".bucket-meta"
+	uploadsDir     = ".uploads"
+	tempDir        = ".temp"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
 	inlineThreshold = 4096
@@ -28,14 +29,27 @@ var (
 	ErrInvalidObjectKey    = errors.New("invalid object key")
 )
 
+// StorageOption is a functional option for configuring Storage
+type StorageOption func(*Storage)
+
+// WithRegion sets the region for the storage
+func WithRegion(region string) StorageOption {
+	return func(s *Storage) {
+		if region != "" {
+			s.region = region
+		}
+	}
+}
+
 // Storage is the local filesystem storage backend
 type Storage struct {
 	basePath string
 	tempDir  string
+	region   string
 }
 
 // NewStorage creates a new local storage backend
-func NewStorage(basePath string) (*Storage, error) {
+func NewStorage(basePath string, opts ...StorageOption) (*Storage, error) {
 	absPath, err := filepath.Abs(basePath)
 	if err != nil {
 		return nil, err
@@ -49,6 +63,12 @@ func NewStorage(basePath string) (*Storage, error) {
 	s := &Storage{
 		basePath: absPath,
 		tempDir:  tempDir,
+		region:   "us-east-1", // Default region
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	return s, nil
@@ -140,6 +160,11 @@ type uploadMetadata struct {
 	ContentType string
 }
 
+// bucketMetadata represents bucket metadata
+type bucketMetadata struct {
+	Ownership string
+}
+
 // saveObjectMetadata saves object metadata
 func saveObjectMetadata(path string, metadata *objectMetadata) error {
 	file, err := os.Create(path)
@@ -195,6 +220,37 @@ func loadUploadMetadata(path string) (*uploadMetadata, error) {
 	defer file.Close()
 
 	var metadata uploadMetadata
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&metadata); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+// saveBucketMetadata saves bucket metadata
+func saveBucketMetadata(path string, metadata *bucketMetadata) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(metadata)
+}
+
+// loadBucketMetadata loads bucket metadata
+func loadBucketMetadata(path string) (*bucketMetadata, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var metadata bucketMetadata
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err

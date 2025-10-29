@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/xml"
 	"net/http"
 	"strconv"
 
@@ -74,6 +75,7 @@ func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -89,15 +91,81 @@ func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleHeadBucket handles HeadBucket operation
 func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	if !s.storage.BucketExists(bucket) {
+		w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleGetBucketOwnershipControls handles GetBucketOwnershipControls operation
+func (s *S3Handler) handleGetBucketOwnershipControls(w http.ResponseWriter, r *http.Request, bucket string) {
+	ownership, err := s.storage.GetBucketOwnership(bucket)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	result := OwnershipControls{
+		Rules: []OwnershipControlsRule{
+			{ObjectOwnership: ownership},
+		},
+	}
+
+	s.xmlResponse(w, result, http.StatusOK)
+}
+
+// handlePutBucketOwnershipControls handles PutBucketOwnershipControls operation
+func (s *S3Handler) handlePutBucketOwnershipControls(w http.ResponseWriter, r *http.Request, bucket string) {
+	var controls OwnershipControls
+	if err := xml.NewDecoder(r.Body).Decode(&controls); err != nil {
+		s.errorResponse(w, r, "MalformedXML", "Invalid XML", http.StatusBadRequest)
+		return
+	}
+
+	if len(controls.Rules) == 0 {
+		s.errorResponse(w, r, "MalformedXML", "At least one rule is required", http.StatusBadRequest)
+		return
+	}
+
+	ownership := controls.Rules[0].ObjectOwnership
+	if err := s.storage.PutBucketOwnership(bucket, ownership); err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleDeleteBucketOwnershipControls handles DeleteBucketOwnershipControls operation
+func (s *S3Handler) handleDeleteBucketOwnershipControls(w http.ResponseWriter, r *http.Request, bucket string) {
+	if err := s.storage.DeleteBucketOwnership(bucket); err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
+	w.WriteHeader(http.StatusNoContent)
 }

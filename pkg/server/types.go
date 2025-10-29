@@ -198,3 +198,20 @@ type DeleteObjectsResult struct {
 	Deleted []DeletedObject `xml:"Deleted,omitempty"`
 	Errors  []DeleteError   `xml:"Error,omitempty"`
 }
+
+// OwnershipControlsRule represents ownership control rule
+type OwnershipControlsRule struct {
+	ObjectOwnership string `xml:"ObjectOwnership"`
+}
+
+// OwnershipControls represents bucket ownership controls
+type OwnershipControls struct {
+	XMLName xml.Name                `xml:"OwnershipControls"`
+	Rules   []OwnershipControlsRule `xml:"Rule"`
+}
+
+// GetBucketOwnershipControlsResult is the response for GetBucketOwnershipControls operation
+type GetBucketOwnershipControlsResult struct {
+	XMLName           xml.Name          `xml:"OwnershipControls"`
+	OwnershipControls OwnershipControls `xml:",innerxml"`
+}

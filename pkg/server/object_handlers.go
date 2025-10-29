@@ -38,6 +38,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -76,6 +77,7 @@ func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -207,6 +209,7 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 	}
 
 	// RenameObject returns 204 No Content on success
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(http.StatusNoContent)
 }
 

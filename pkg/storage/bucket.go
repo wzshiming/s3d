@@ -2,6 +2,7 @@ package storage
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +17,20 @@ func (s *Storage) CreateBucket(bucket string) error {
 		return ErrBucketAlreadyExists
 	}
 
-	return os.MkdirAll(bucketPath, 0755)
+	if err := os.MkdirAll(bucketPath, 0755); err != nil {
+		return err
+	}
+
+	// Create bucket metadata
+	metadata := &bucketMetadata{}
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+	if err := saveBucketMetadata(metaPath, metadata); err != nil {
+		// Clean up bucket directory if metadata save fails
+		os.RemoveAll(bucketPath)
+		return err
+	}
+
+	return nil
 }
 
 // DeleteBucket deletes a bucket
@@ -86,4 +100,84 @@ func (s *Storage) BucketExists(bucket string) bool {
 
 	info, err := os.Stat(bucketPath)
 	return err == nil && info.IsDir()
+}
+
+// GetRegion returns the configured region for this storage instance
+func (s *Storage) GetRegion() string {
+	return s.region
+}
+
+// GetBucketOwnership returns the ownership control setting for a bucket
+func (s *Storage) GetBucketOwnership(bucket string) (string, error) {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return "", err
+	}
+
+	if !s.BucketExists(bucket) {
+		return "", ErrBucketNotFound
+	}
+
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+	metadata, err := loadBucketMetadata(metaPath)
+	if err != nil {
+		return "", err
+	}
+
+	if metadata == nil || metadata.Ownership == "" {
+		// Default to BucketOwnerEnforced if not set
+		return "BucketOwnerEnforced", nil
+	}
+
+	return metadata.Ownership, nil
+}
+
+// PutBucketOwnership sets the ownership control setting for a bucket
+func (s *Storage) PutBucketOwnership(bucket, ownership string) error {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
+	if !s.BucketExists(bucket) {
+		return ErrBucketNotFound
+	}
+
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+	metadata, err := loadBucketMetadata(metaPath)
+	if err != nil {
+		return err
+	}
+
+	if metadata == nil {
+		metadata = &bucketMetadata{}
+	}
+
+	metadata.Ownership = ownership
+	return saveBucketMetadata(metaPath, metadata)
+}
+
+// DeleteBucketOwnership deletes the ownership control setting for a bucket
+func (s *Storage) DeleteBucketOwnership(bucket string) error {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
+	if !s.BucketExists(bucket) {
+		return ErrBucketNotFound
+	}
+
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+	metadata, err := loadBucketMetadata(metaPath)
+	if err != nil {
+		return err
+	}
+
+	if metadata == nil {
+		metadata = &bucketMetadata{}
+	}
+
+	metadata.Ownership = ""
+	return saveBucketMetadata(metaPath, metadata)
 }

@@ -55,11 +55,18 @@ func TestBucketOperations(t *testing.T) {
 
 	// Test HeadBucket - Exists
 	t.Run("HeadBucket_Exists", func(t *testing.T) {
-		_, err := ts.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		output, err := ts.client.HeadBucket(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),
 		})
 		if err != nil {
 			t.Fatalf("HeadBucket failed: %v", err)
+		}
+		
+		// Verify that bucket region is returned
+		if output.BucketRegion == nil {
+			t.Error("Expected BucketRegion to be set")
+		} else if *output.BucketRegion != "us-east-1" {
+			t.Errorf("Expected BucketRegion to be 'us-east-1', got '%s'", *output.BucketRegion)
 		}
 	})
 

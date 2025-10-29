@@ -22,6 +22,7 @@ func urlSafeToStdBase64(urlSafe string) string {
 // xmlResponse writes an XML response
 func (s *S3Handler) xmlResponse(w http.ResponseWriter, data any, status int) {
 	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(status)
 
 	if _, err := w.Write([]byte(xml.Header)); err != nil {
@@ -40,6 +41,7 @@ func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, 
 	}
 
 	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("x-amz-bucket-region", s.storage.GetRegion())
 	w.WriteHeader(status)
 
 	if _, writeErr := w.Write([]byte(xml.Header)); writeErr != nil {

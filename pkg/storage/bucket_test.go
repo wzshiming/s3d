@@ -130,3 +130,37 @@ func TestDeleteNonexistentBucket(t *testing.T) {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
 }
+
+func TestBucketMetadata(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test with default region
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if store.GetRegion() != "us-east-1" {
+		t.Errorf("Expected default region to be 'us-east-1', got '%s'", store.GetRegion())
+	}
+
+	// Test with custom region
+	tmpDir2, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir2)
+
+	store2, err := NewStorage(tmpDir2, WithRegion("eu-west-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if store2.GetRegion() != "eu-west-1" {
+		t.Errorf("Expected region to be 'eu-west-1', got '%s'", store2.GetRegion())
+	}
+}
