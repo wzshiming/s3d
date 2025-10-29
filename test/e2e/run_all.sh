@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/bucket_pagination_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
+source "${SCRIPT_DIR}/logging_tests.sh"
 
 # Run setup
 setup
@@ -57,6 +58,9 @@ test_nested_paths
 
 # Clean up final test
 aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rb s3://${TEST_BUCKET} --force
+
+# Run bucket logging tests
+run_logging_tests
 
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}All e2e tests passed successfully!${NC}"

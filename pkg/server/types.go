@@ -198,3 +198,15 @@ type DeleteObjectsResult struct {
 	Deleted []DeletedObject `xml:"Deleted,omitempty"`
 	Errors  []DeleteError   `xml:"Error,omitempty"`
 }
+
+// LoggingEnabled represents the logging configuration when enabled
+type LoggingEnabled struct {
+	TargetBucket string `xml:"TargetBucket"`
+	TargetPrefix string `xml:"TargetPrefix,omitempty"`
+}
+
+// BucketLoggingStatus represents the logging status of a bucket
+type BucketLoggingStatus struct {
+	XMLName        xml.Name        `xml:"BucketLoggingStatus"`
+	LoggingEnabled *LoggingEnabled `xml:"LoggingEnabled,omitempty"`
+}
