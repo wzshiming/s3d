@@ -296,11 +296,17 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 		// Check if this is a meta file (all objects have meta files)
 		if filepath.Base(path) == metaFile && !info.IsDir() {
 			objectDir := filepath.Dir(path)
-			objectKey, err := filepath.Rel(bucketPath, objectDir)
+			encodedKey, err := filepath.Rel(bucketPath, objectDir)
 			if err != nil {
 				return nil
 			}
-			objectKey = filepath.ToSlash(objectKey)
+			encodedKey = filepath.ToSlash(encodedKey)
+			
+			// Decode the filesystem path back to the original object key
+			objectKey, err := decodeObjectKey(encodedKey)
+			if err != nil {
+				return nil // Skip objects with invalid encoding
+			}
 
 			// Apply prefix filter
 			if prefix != "" && !strings.HasPrefix(objectKey, prefix) {
