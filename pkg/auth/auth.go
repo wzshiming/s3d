@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Credentials represents AWS credentials
@@ -52,23 +54,97 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 
 // Authenticate validates the request signature
 func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
+	// Check for query string authentication (presigned URLs)
+	queryParams := r.URL.Query()
+	if queryParams.Get("X-Amz-Algorithm") != "" {
+		return a.authenticateV4Query(r)
+	}
 
 	// Check if authentication is required
-	if authHeader == "" {
-		return "", fmt.Errorf("missing authorization header")
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		if strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256") {
+			return a.authenticateV4Header(r, authHeader)
+		}
+		return "", fmt.Errorf("unsupported authorization type")
 	}
 
-	// Parse AWS Signature Version 4
-	if strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256") {
-		return a.authenticateV4(r, authHeader)
-	}
-
-	return "", fmt.Errorf("unsupported authorization type")
+	return "", fmt.Errorf("missing or invalid authentication information")
 }
 
-// authenticateV4 validates AWS Signature Version 4
-func (a *AWS4Authenticator) authenticateV4(r *http.Request, authHeader string) (string, error) {
+// authenticateV4Query validates AWS Signature Version 4 query string authentication
+func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error) {
+	queryParams := r.URL.Query()
+
+	// Parse required query parameters
+	algorithm := queryParams.Get("X-Amz-Algorithm")
+	credential := queryParams.Get("X-Amz-Credential")
+	date := queryParams.Get("X-Amz-Date")
+	expires := queryParams.Get("X-Amz-Expires")
+	signedHeaders := queryParams.Get("X-Amz-SignedHeaders")
+	signature := queryParams.Get("X-Amz-Signature")
+
+	// Validate required parameters
+	if algorithm != "AWS4-HMAC-SHA256" {
+		return "", fmt.Errorf("invalid or missing algorithm")
+	}
+	if credential == "" || date == "" || signedHeaders == "" || signature == "" {
+		return "", fmt.Errorf("missing required query parameters")
+	}
+
+	// Parse credential
+	credParts := strings.Split(credential, "/")
+	if len(credParts) < 5 {
+		return "", fmt.Errorf("invalid credential format")
+	}
+
+	accessKeyID := credParts[0]
+	credDate := credParts[1]
+	region := credParts[2]
+	service := credParts[3]
+
+	// Check if credentials exist
+	secretAccessKey, exists := a.credentials[accessKeyID]
+	if !exists {
+		return "", fmt.Errorf("invalid access key")
+	}
+
+	// Validate expiration if provided
+	if expires != "" {
+		// Parse the X-Amz-Date timestamp (format: 20230101T000000Z)
+		requestTime, err := parseAmzDate(date)
+		if err != nil {
+			return "", fmt.Errorf("invalid X-Amz-Date format: %v", err)
+		}
+
+		// Parse expires duration (in seconds)
+		expiresSeconds, err := strconv.Atoi(expires)
+		if err != nil {
+			return "", fmt.Errorf("invalid X-Amz-Expires value: %v", err)
+		}
+
+		// Check if URL has expired
+		expirationTime := requestTime.Add(time.Duration(expiresSeconds) * time.Second)
+		if time.Now().After(expirationTime) {
+			return "", fmt.Errorf("presigned URL has expired")
+		}
+	}
+
+	// Calculate expected signature
+	expectedSignature, err := a.calculateSignatureV4Query(r, secretAccessKey, credDate, region, service, signedHeaders)
+	if err != nil {
+		return "", err
+	}
+
+	if signature != expectedSignature {
+		return "", fmt.Errorf("signature does not match")
+	}
+
+	return accessKeyID, nil
+}
+
+// authenticateV4Header validates AWS Signature Version 4
+func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader string) (string, error) {
 	// Parse authorization header
 	// Format: AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=...
 	if !strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256 ") {
@@ -110,7 +186,7 @@ func (a *AWS4Authenticator) authenticateV4(r *http.Request, authHeader string) (
 	}
 
 	// Calculate expected signature
-	expectedSignature, err := a.calculateSignatureV4(r, secretAccessKey, date, region, service, signedHeaders)
+	expectedSignature, err := a.calculateSignatureV4Header(r, secretAccessKey, date, region, service, signedHeaders)
 	if err != nil {
 		return "", err
 	}
@@ -122,10 +198,41 @@ func (a *AWS4Authenticator) authenticateV4(r *http.Request, authHeader string) (
 	return accessKeyID, nil
 }
 
-// calculateSignatureV4 calculates AWS Signature Version 4
-func (a *AWS4Authenticator) calculateSignatureV4(r *http.Request, secretAccessKey, date, region, service, signedHeaders string) (string, error) {
+// calculateSignatureV4Query calculates AWS Signature Version 4 for query string authentication
+func (a *AWS4Authenticator) calculateSignatureV4Query(r *http.Request, secretAccessKey, date, region, service, signedHeaders string) (string, error) {
+	// Step 1: Create canonical request (excluding signature from query string)
+	canonicalRequest := a.createCanonicalRequestQuery(r, signedHeaders)
+
+	// Step 2: Create string to sign
+	algorithm := "AWS4-HMAC-SHA256"
+	credentialScope := fmt.Sprintf("%s/%s/%s/aws4_request", date, region, service)
+
+	hashedCanonicalRequest := sha256Hash(canonicalRequest)
+
+	timestamp := r.URL.Query().Get("X-Amz-Date")
+
+	stringToSign := strings.Join([]string{
+		algorithm,
+		timestamp,
+		credentialScope,
+		hashedCanonicalRequest,
+	}, "\n")
+
+	// Step 3: Calculate signature
+	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
+	dateRegionKey := hmacSHA256(dateKey, []byte(region))
+	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
+	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+
+	signature := hmacSHA256(signingKey, []byte(stringToSign))
+
+	return hex.EncodeToString(signature), nil
+}
+
+// calculateSignatureV4Header calculates AWS Signature Version 4
+func (a *AWS4Authenticator) calculateSignatureV4Header(r *http.Request, secretAccessKey, date, region, service, signedHeaders string) (string, error) {
 	// Step 1: Create canonical request
-	canonicalRequest := a.createCanonicalRequest(r, signedHeaders)
+	canonicalRequest := a.createCanonicalRequestHeader(r, signedHeaders)
 
 	// Step 2: Create string to sign
 	algorithm := "AWS4-HMAC-SHA256"
@@ -156,8 +263,19 @@ func (a *AWS4Authenticator) calculateSignatureV4(r *http.Request, secretAccessKe
 	return hex.EncodeToString(signature), nil
 }
 
-// createCanonicalRequest creates a canonical request for AWS Signature V4
-func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeaders string) string {
+// createCanonicalRequestQuery creates a canonical request for AWS Signature V4 query string authentication
+func (a *AWS4Authenticator) createCanonicalRequestQuery(r *http.Request, signedHeaders string) string {
+	return a.createCanonicalRequestInternal(r, signedHeaders, true)
+}
+
+// createCanonicalRequestHeader creates a canonical request for AWS Signature V4
+func (a *AWS4Authenticator) createCanonicalRequestHeader(r *http.Request, signedHeaders string) string {
+	return a.createCanonicalRequestInternal(r, signedHeaders, false)
+}
+
+// createCanonicalRequestInternal creates a canonical request for AWS Signature V4
+// isQueryAuth: when true, excludes X-Amz-Signature from query params and uses UNSIGNED-PAYLOAD
+func (a *AWS4Authenticator) createCanonicalRequestInternal(r *http.Request, signedHeaders string, isQueryAuth bool) string {
 	// Method
 	method := r.Method
 
@@ -171,6 +289,10 @@ func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeader
 	queryString := r.URL.Query()
 	var queryParams []string
 	for key := range queryString {
+		// Skip the signature parameter for query string auth
+		if isQueryAuth && key == "X-Amz-Signature" {
+			continue
+		}
 		for _, value := range queryString[key] {
 			// AWS SigV4 requires URL encoding of query parameters
 			encodedKey := url.QueryEscape(key)
@@ -198,9 +320,15 @@ func (a *AWS4Authenticator) createCanonicalRequest(r *http.Request, signedHeader
 	canonicalHeadersString := strings.Join(canonicalHeaders, "")
 
 	// Payload hash
-	payloadHash := r.Header.Get("X-Amz-Content-Sha256")
-	if payloadHash == "" {
+	var payloadHash string
+	if isQueryAuth {
+		// For query string auth, it's typically UNSIGNED-PAYLOAD
 		payloadHash = "UNSIGNED-PAYLOAD"
+	} else {
+		payloadHash = r.Header.Get("X-Amz-Content-Sha256")
+		if payloadHash == "" {
+			payloadHash = "UNSIGNED-PAYLOAD"
+		}
 	}
 
 	return strings.Join([]string{
@@ -224,4 +352,9 @@ func hmacSHA256(key, data []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write(data)
 	return h.Sum(nil)
+}
+
+// parseAmzDate parses AWS timestamp format (YYYYMMDDTHHMMSSZ)
+func parseAmzDate(timestamp string) (time.Time, error) {
+	return time.Parse("20060102T150405Z", timestamp)
 }

@@ -421,6 +421,212 @@ func TestAuthenticatedObjectOperations(t *testing.T) {
 	})
 }
 
+// TestPresignedURLAuthentication tests that presigned URLs (query string auth) work correctly
+func TestPresignedURLAuthentication(t *testing.T) {
+	// Setup test server with authentication
+	tmpDir, err := os.MkdirTemp("", "s3d-presigned-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := storage.NewStorage(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	authenticator := auth.NewAWS4Authenticator()
+	authenticator.AddCredentials("presign-key", "presign-secret")
+
+	s3Handler := server.NewS3Handler(store, server.WithRegion("us-east-1"))
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+	srv := &http.Server{Handler: authenticator.AuthMiddleware(s3Handler)}
+
+	go srv.Serve(listener)
+	defer srv.Shutdown(context.Background())
+
+	time.Sleep(100 * time.Millisecond)
+
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			"presign-key",
+			"presign-secret",
+			"",
+		)),
+		config.WithEndpointResolver(aws.EndpointResolverFunc(
+			func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:               "http://" + addr,
+					SigningRegion:     "us-east-1",
+					HostnameImmutable: true,
+				}, nil
+			}),
+		),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+
+	// Use presign client to create presigned URLs
+	presignClient := s3.NewPresignClient(client)
+
+	bucketName := "test-presigned-bucket"
+
+	// Create bucket first
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	objectKey := "test-presigned-object.txt"
+	content := "Hello from presigned URL!"
+
+	// Test: Put object normally first
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+		Body:   strings.NewReader(content),
+	})
+	if err != nil {
+		t.Fatalf("Failed to put object: %v", err)
+	}
+	defer client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+
+	// Test: Create a presigned GET URL and use it
+	t.Run("PresignedGetObject", func(t *testing.T) {
+		presignedReq, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		}, func(opts *s3.PresignOptions) {
+			opts.Expires = time.Duration(3600 * int64(time.Second))
+		})
+		if err != nil {
+			t.Fatalf("Failed to presign GetObject: %v", err)
+		}
+
+		// Use the presigned URL with a raw HTTP client
+		httpResp, err := http.Get(presignedReq.URL)
+		if err != nil {
+			t.Fatalf("Failed to get object via presigned URL: %v", err)
+		}
+		defer httpResp.Body.Close()
+
+		if httpResp.StatusCode != http.StatusOK {
+			t.Fatalf("Expected status OK, got: %d", httpResp.StatusCode)
+		}
+
+		body, err := io.ReadAll(httpResp.Body)
+		if err != nil {
+			t.Fatalf("Failed to read response body: %v", err)
+		}
+
+		if string(body) != content {
+			t.Fatalf("Expected content %q, got %q", content, body)
+		}
+	})
+
+	// Test: Create a presigned HEAD URL and use it
+	t.Run("PresignedHeadObject", func(t *testing.T) {
+		presignedReq, err := presignClient.PresignHeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		}, func(opts *s3.PresignOptions) {
+			opts.Expires = time.Duration(3600 * int64(time.Second))
+		})
+		if err != nil {
+			t.Fatalf("Failed to presign HeadObject: %v", err)
+		}
+
+		// Use the presigned URL with a raw HTTP client
+		httpReq, err := http.NewRequest("HEAD", presignedReq.URL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create HEAD request: %v", err)
+		}
+
+		httpResp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			t.Fatalf("Failed to head object via presigned URL: %v", err)
+		}
+		defer httpResp.Body.Close()
+
+		if httpResp.StatusCode != http.StatusOK {
+			t.Fatalf("Expected status OK, got: %d", httpResp.StatusCode)
+		}
+	})
+
+	// Test: Invalid presigned URL (wrong credentials)
+	t.Run("InvalidPresignedURL", func(t *testing.T) {
+		// Create config with wrong credentials
+		wrongCfg, err := config.LoadDefaultConfig(ctx,
+			config.WithRegion("us-east-1"),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				"wrong-key",
+				"wrong-secret",
+				"",
+			)),
+			config.WithEndpointResolver(aws.EndpointResolverFunc(
+				func(service, region string) (aws.Endpoint, error) {
+					return aws.Endpoint{
+						URL:               "http://" + addr,
+						SigningRegion:     "us-east-1",
+						HostnameImmutable: true,
+					}, nil
+				}),
+			),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create wrong config: %v", err)
+		}
+
+		wrongClient := s3.NewFromConfig(wrongCfg, func(o *s3.Options) {
+			o.UsePathStyle = true
+		})
+
+		wrongPresignClient := s3.NewPresignClient(wrongClient)
+
+		presignedReq, err := wrongPresignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		})
+		if err != nil {
+			t.Fatalf("Failed to presign GetObject: %v", err)
+		}
+
+		// Use the presigned URL with wrong credentials
+		httpResp, err := http.Get(presignedReq.URL)
+		if err != nil {
+			t.Fatalf("Failed to get object via presigned URL: %v", err)
+		}
+		defer httpResp.Body.Close()
+
+		// Should fail with authentication error
+		if httpResp.StatusCode == http.StatusOK {
+			t.Fatal("Expected authentication error with wrong credentials")
+		}
+	})
+}
+
 // TestMultipleCredentials tests that multiple sets of credentials can be configured
 func TestMultipleCredentials(t *testing.T) {
 	// Setup test server with multiple credentials
