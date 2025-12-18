@@ -36,3 +36,11 @@ go.work.sum
 
 # Data directory
 data/
+
+# Compatibility test artifacts
+test/compatibility/s3-tests/
+test/compatibility/s3d
+test/compatibility/s3d.log
+test/compatibility/compatibility_results.txt
+test/compatibility/compatibility_report.md
+test/compatibility/compatibility_summary.md
