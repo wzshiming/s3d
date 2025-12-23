@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/xml"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -36,6 +37,11 @@ func (s *S3Handler) xmlResponse(w http.ResponseWriter, r *http.Request, data any
 	if err := xml.NewEncoder(w).Encode(data); err != nil {
 		return
 	}
+}
+
+// xmlDecode decodes XML from a reader
+func (s *S3Handler) xmlDecode(r io.Reader, v any) error {
+	return xml.NewDecoder(r).Decode(v)
 }
 
 // errorResponse writes an error response

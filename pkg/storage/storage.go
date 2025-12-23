@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	dataFile   = "data"
-	metaFile   = "meta"
-	uploadsDir = ".uploads"
-	tempDir    = ".temp"
+	dataFile       = "data"
+	metaFile       = "meta"
+	uploadsDir     = ".uploads"
+	tempDir        = ".temp"
+	bucketMetaFile = ".bucket-meta"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
 	inlineThreshold = 4096
@@ -195,6 +196,37 @@ func loadUploadMetadata(path string) (*uploadMetadata, error) {
 	defer file.Close()
 
 	var metadata uploadMetadata
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&metadata); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+// saveBucketMetadata saves bucket metadata using gob encoding
+func saveBucketMetadata(path string, metadata *BucketMetadata) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(metadata)
+}
+
+// loadBucketMetadata loads bucket metadata using gob encoding
+func loadBucketMetadata(path string) (*BucketMetadata, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &BucketMetadata{}, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var metadata BucketMetadata
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&metadata); err != nil {
 		return nil, err
