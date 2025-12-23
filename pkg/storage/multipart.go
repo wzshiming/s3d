@@ -18,6 +18,12 @@ func genUploadID() string {
 	return uuid.New().String()
 }
 
+// getUploadDir returns the filesystem path for a multipart upload
+func (s *Storage) getUploadDir(bucket, key, uploadID string) string {
+	encodedKey := encodeObjectKey(key)
+	return filepath.Join(s.basePath, uploadsDir, bucket, filepath.FromSlash(encodedKey), uploadID)
+}
+
 // InitiateMultipartUpload initiates a multipart upload
 func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string) (string, error) {
 	if !s.BucketExists(bucket) {
@@ -35,8 +41,8 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string
 	// Generate upload ID
 	uploadID := genUploadID()
 
-	// Create upload directory in .uploads/bucket/key/uploadID
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	// Create upload directory in .uploads/bucket/encoded-key/uploadID
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return "", err
 	}
@@ -63,7 +69,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
@@ -129,7 +135,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
@@ -230,7 +236,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Check filesystem for upload directory if not in memory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
@@ -346,7 +352,7 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return ErrInvalidUploadID
 	}
@@ -404,15 +410,21 @@ func (s *Storage) ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker
 			return nil // Not an upload directory, keep walking
 		}
 
-		// This is an upload directory: .uploads/bucket/key/uploadID
-		// Split the relative path to get key and uploadID
+		// This is an upload directory: .uploads/bucket/encoded-key/uploadID
+		// Split the relative path to get encoded key and uploadID
 		parts := strings.Split(filepath.ToSlash(relPath), "/")
 		if len(parts) < 2 {
 			return nil
 		}
 
 		uploadID := parts[len(parts)-1]
-		key := strings.Join(parts[:len(parts)-1], "/")
+		encodedKey := strings.Join(parts[:len(parts)-1], "/")
+		
+		// Decode the key back to the original
+		key, err := decodeObjectKey(encodedKey)
+		if err != nil {
+			return nil // Skip uploads with invalid encoding
+		}
 
 		// Apply prefix filter
 		if prefix != "" && !strings.HasPrefix(key, prefix) {
@@ -467,7 +479,7 @@ func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker, maxP
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.getUploadDir(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}

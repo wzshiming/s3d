@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/bucket_pagination_tests.sh"
 source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
+source "${SCRIPT_DIR}/nonascii_tests.sh"
 
 # Run setup
 setup
@@ -40,6 +41,9 @@ test_copy_to_existing_same_content
 test_copy_to_existing_different_content
 test_rename_to_existing_same_content
 test_rename_to_existing_different_content
+
+# Run non-ASCII object key tests
+test_nonascii_object_keys
 
 # Run advanced tests
 test_multipart_upload
