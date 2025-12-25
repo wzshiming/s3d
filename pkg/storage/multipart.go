@@ -19,7 +19,7 @@ func genUploadID() string {
 }
 
 // InitiateMultipartUpload initiates a multipart upload
-func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string) (string, error) {
+func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType, contentDisposition string) (string, error) {
 	if !s.BucketExists(bucket) {
 		return "", ErrBucketNotFound
 	}
@@ -43,7 +43,8 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata := &uploadMetadata{
-		ContentType: contentType,
+		ContentType:        contentType,
+		ContentDisposition: contentDisposition,
 	}
 	if err := saveUploadMetadata(uploadMetaPath, metadata); err != nil {
 		return "", err
@@ -293,8 +294,9 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	// Create object metadata from upload metadata
 	objectMetadata := &objectMetadata{
-		ContentType: uploadMetadata.ContentType,
-		ETag:        etag,
+		ContentType:        uploadMetadata.ContentType,
+		ContentDisposition: uploadMetadata.ContentDisposition,
+		ETag:               etag,
 	}
 	if err := saveObjectMetadata(metaPath, objectMetadata); err != nil {
 		return nil, err
@@ -331,11 +333,12 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return &ObjectInfo{
-		Key:         key,
-		Size:        dataFileInfo.Size(),
-		ETag:        etag,
-		ModTime:     metaFileInfo.ModTime(),
-		ContentType: contentType,
+		Key:                key,
+		Size:               dataFileInfo.Size(),
+		ETag:               etag,
+		ModTime:            metaFileInfo.ModTime(),
+		ContentType:        contentType,
+		ContentDisposition: uploadMetadata.ContentDisposition,
 	}, nil
 }
 

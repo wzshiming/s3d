@@ -33,7 +33,7 @@ func TestDeleteObjectCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	for _, key := range keys {
-		_, err := store.PutObject(bucketName, key, bytes.NewReader([]byte("test content")), "text/plain")
+		_, err := store.PutObject(bucketName, key, bytes.NewReader([]byte("test content")), "text/plain", "")
 		if err != nil {
 			t.Fatalf("PutObject failed for %s: %v", key, err)
 		}
@@ -99,12 +99,12 @@ func TestRenameObjectCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	// Create objects
-	_, err = store.PutObject(bucketName, "old-folder/file1.txt", bytes.NewReader([]byte("content")), "text/plain")
+	_, err = store.PutObject(bucketName, "old-folder/file1.txt", bytes.NewReader([]byte("content")), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = store.PutObject(bucketName, "other-folder/file2.txt", bytes.NewReader([]byte("content")), "text/plain")
+	_, err = store.PutObject(bucketName, "other-folder/file2.txt", bytes.NewReader([]byte("content")), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +158,12 @@ func TestRenameObjectWithSameContentCleansUpEmptyFolders(t *testing.T) {
 	content := []byte("same content")
 
 	// Create source and destination with same content
-	_, err = store.PutObject(bucketName, "src-folder/file.txt", bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, "src-folder/file.txt", bytes.NewReader(content), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = store.PutObject(bucketName, "dst-folder/file.txt", bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, "dst-folder/file.txt", bytes.NewReader(content), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestAbortMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	// Initiate multipart upload with nested path
-	uploadID, err := store.InitiateMultipartUpload(bucketName, "folder1/subfolder/file.txt", "text/plain")
+	uploadID, err := store.InitiateMultipartUpload(bucketName, "folder1/subfolder/file.txt", "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestCompleteMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	}
 
 	// Initiate multipart upload
-	uploadID, err := store.InitiateMultipartUpload(bucketName, "folder1/subfolder/file.txt", "text/plain")
+	uploadID, err := store.InitiateMultipartUpload(bucketName, "folder1/subfolder/file.txt", "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,12 +308,12 @@ func TestDeleteObjectDoesNotCleanupNonEmptyFolders(t *testing.T) {
 	}
 
 	// Create multiple objects in the same folder
-	_, err = store.PutObject(bucketName, "folder/file1.txt", bytes.NewReader([]byte("content1")), "text/plain")
+	_, err = store.PutObject(bucketName, "folder/file1.txt", bytes.NewReader([]byte("content1")), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = store.PutObject(bucketName, "folder/file2.txt", bytes.NewReader([]byte("content2")), "text/plain")
+	_, err = store.PutObject(bucketName, "folder/file2.txt", bytes.NewReader([]byte("content2")), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestCleanupStopsAtBucketBoundary(t *testing.T) {
 	}
 
 	// Create and delete a single object at the root of the bucket
-	_, err = store.PutObject(bucketName, "file.txt", bytes.NewReader([]byte("content")), "text/plain")
+	_, err = store.PutObject(bucketName, "file.txt", bytes.NewReader([]byte("content")), "text/plain", "")
 	if err != nil {
 		t.Fatal(err)
 	}

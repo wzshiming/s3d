@@ -128,8 +128,9 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 
 // objectMetadata represents object metadata
 type objectMetadata struct {
-	ContentType string
-	ETag        string
+	ContentType        string
+	ContentDisposition string
+	ETag               string
 	// Data stores the file content inline for small files (<=4096 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
 	Data []byte
@@ -137,7 +138,8 @@ type objectMetadata struct {
 
 // uploadMetadata represents multipart upload metadata
 type uploadMetadata struct {
-	ContentType string
+	ContentType        string
+	ContentDisposition string
 }
 
 // saveObjectMetadata saves object metadata

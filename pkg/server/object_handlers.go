@@ -25,8 +25,9 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	contentDisposition := r.Header.Get("Content-Disposition")
 
-	objInfo, err := s.storage.PutObject(bucket, key, r.Body, contentType)
+	objInfo, err := s.storage.PutObject(bucket, key, r.Body, contentType, contentDisposition)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -62,6 +63,15 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 	w.Header().Set("Content-Type", info.ContentType)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
+
+	// Set Content-Disposition: prioritize query parameter, fall back to stored metadata
+	contentDisposition := r.URL.Query().Get("response-content-disposition")
+	if contentDisposition == "" {
+		contentDisposition = info.ContentDisposition
+	}
+	if contentDisposition != "" {
+		w.Header().Set("Content-Disposition", contentDisposition)
+	}
 
 	http.ServeContent(w, r, key, info.ModTime, reader)
 }
