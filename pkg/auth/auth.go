@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -45,7 +46,20 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.authenticate(r)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Authentication failed: %v", err), http.StatusForbidden)
+			err := Error{
+				Code:    "AccessDenied",
+				Message: "Access Denied",
+			}
+
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusForbidden)
+
+			if _, writeErr := w.Write([]byte(xml.Header)); writeErr != nil {
+				return
+			}
+			if encodeErr := xml.NewEncoder(w).Encode(err); encodeErr != nil {
+				return
+			}
 			return
 		}
 		next.ServeHTTP(w, r)
