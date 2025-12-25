@@ -33,15 +33,11 @@ func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 	for remaining > 0 {
 		n, err := syscall.Sendfile(dstFd, srcFd, nil, int(remaining))
 		if err != nil {
-			// If sendfile is not supported or fails, fall back to io.Copy
-			if err == syscall.EINVAL || err == syscall.ENOSYS {
-				// Seek back to beginning
-				if _, seekErr := src.Seek(0, io.SeekStart); seekErr != nil {
-					return written, seekErr
-				}
-				// Use io.Copy for the remaining data
-				copied, copyErr := io.Copy(dst, src)
-				return written + copied, copyErr
+			// If sendfile is not supported, fall back to io.Copy
+			// Only fall back if no data has been written yet
+			if (err == syscall.EINVAL || err == syscall.ENOSYS) && written == 0 {
+				// Sendfile not supported, use io.Copy instead
+				return io.Copy(dst, src)
 			}
 			return written, err
 		}
