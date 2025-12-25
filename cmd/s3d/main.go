@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gorilla/handlers"
@@ -89,8 +90,40 @@ func main() {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
 	}
 
+	headersList := make([]string, 0, len(headers))
+	for h := range headers {
+		headersList = append(headersList, h)
+	}
+	sort.Strings(headersList)
+
+	// Add CORS support
+	corsHandler := handlers.CORS(
+		handlers.AllowedOrigins([]string{"*"}), // Allow all origins
+		handlers.AllowedMethods([]string{http.MethodHead, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}),
+		handlers.AllowedHeaders(headersList), // Allow specific headers
+	)
+	handler = corsHandler(handler)
 	handler = handlers.CombinedLoggingHandler(log.Writer(), handler)
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+var headers = map[string]struct{}{
+	"authorization":                {},
+	"content-type":                 {},
+	"content-encoding":             {},
+	"amz-sdk-invocation-id":        {},
+	"amz-sdk-request":              {},
+	"x-amz-content-sha256":         {},
+	"x-amz-decoded-content-length": {},
+	"x-amz-date":                   {},
+	"x-amz-user-agent":             {},
+	"x-amz-checksum-mode":          {},
+	"x-amz-checksum-crc32":         {},
+	"x-amz-checksum-sha256":        {},
+	"x-amz-sdk-checksum-algorithm": {},
+	"x-amz-copy-source":            {},
+	"x-amz-rename-source":          {},
+	"x-amz-trailer":                {},
 }
