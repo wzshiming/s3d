@@ -281,6 +281,12 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Calculate hash from the final file
+	// Note: This requires an additional read pass, but it's necessary because:
+	// 1. sendfile is a zero-copy operation that transfers data in kernel space
+	// 2. To hash the data, we must read it into user space
+	// 3. Using a tee reader would defeat the purpose by forcing data through user space during concatenation
+	// The overall performance is still better: sendfile (zero-copy merge) + one read (for hash)
+	// vs. the original approach: multiple reads through io.MultiWriter (copy + hash simultaneously)
 	hash := sha256.New()
 	dataFile, err := os.Open(dataPath)
 	if err != nil {

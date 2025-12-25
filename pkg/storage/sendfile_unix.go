@@ -58,12 +58,13 @@ func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 			return written, err
 		}
 		
-		written += int64(n)
-		remaining -= int64(n)
-		
+		// If sendfile returns 0, no more data can be transferred
 		if n == 0 {
 			break
 		}
+		
+		written += int64(n)
+		remaining -= int64(n)
 	}
 	
 	return written, nil
