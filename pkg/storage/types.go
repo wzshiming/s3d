@@ -4,11 +4,12 @@ import "time"
 
 // ObjectInfo contains metadata about an object
 type ObjectInfo struct {
-	Key         string
-	Size        int64
-	ETag        string
-	ModTime     time.Time
-	ContentType string
+	Key                string
+	Size               int64
+	ETag               string
+	ModTime            time.Time
+	ContentType        string
+	ContentDisposition string
 }
 
 // BucketInfo contains metadata about a bucket
