@@ -280,16 +280,16 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	// Calculate hash from the final file.
-	// Hash calculated after merge since sendfile operates in kernel space.
-	// Overall performance improved despite additional read pass.
+	// Calculate hash from the final merged file.
+	// Since sendfile operates in kernel space without user-space copying, we need
+	// a separate read pass for hash calculation, but overall performance is still improved.
 	hash := sha256.New()
 	dataFile, err := os.Open(dataPath)
 	if err != nil {
 		return nil, err
 	}
 	defer dataFile.Close()
-	
+
 	if _, err := io.Copy(hash, dataFile); err != nil {
 		return nil, err
 	}

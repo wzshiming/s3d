@@ -16,6 +16,12 @@ const (
 	maxSendfileSize = 1 << 30 // 1GB
 )
 
+// isSendfileUnsupported checks if the error indicates sendfile is not supported.
+func isSendfileUnsupported(err error) bool {
+	return err == syscall.EINVAL || err == syscall.ENOSYS ||
+		err == syscall.ENOTSUP || err == syscall.EOPNOTSUPP
+}
+
 // copyFileWithSendfile copies data from src to dst using sendfile for better performance.
 // It returns the number of bytes copied and any error encountered.
 func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
@@ -49,7 +55,7 @@ func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 		if err != nil {
 			// If sendfile is not supported, fall back to io.Copy
 			// Only fall back if no data has been written yet
-			if (err == syscall.EINVAL || err == syscall.ENOSYS || err == syscall.ENOTSUP || err == syscall.EOPNOTSUPP) && written == 0 {
+			if isSendfileUnsupported(err) && written == 0 {
 				// Reset source file position before fallback
 				if _, seekErr := src.Seek(0, io.SeekStart); seekErr != nil {
 					return 0, seekErr
