@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	// maxSendfileSize limits the amount of data sent in a single sendfile call
-	// to avoid integer overflow on 32-bit systems and to work around kernel limitations
+	// maxSendfileSize limits the amount of data sent in a single sendfile call.
+	// Set to a value that safely fits in int on all platforms to avoid overflow.
+	// On 32-bit systems, int max is ~2GB; on 64-bit it's much larger.
+	// We use a conservative 1GB limit that works everywhere.
 	maxSendfileSize = 1 << 30 // 1GB
 )
 
@@ -47,7 +49,7 @@ func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 		if err != nil {
 			// If sendfile is not supported, fall back to io.Copy
 			// Only fall back if no data has been written yet
-			if (err == syscall.EINVAL || err == syscall.ENOSYS) && written == 0 {
+			if (err == syscall.EINVAL || err == syscall.ENOSYS || err == syscall.ENOTSUP || err == syscall.EOPNOTSUPP) && written == 0 {
 				// Reset source file position before fallback
 				if _, seekErr := src.Seek(0, io.SeekStart); seekErr != nil {
 					return 0, seekErr
