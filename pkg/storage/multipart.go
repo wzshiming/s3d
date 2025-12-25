@@ -286,11 +286,11 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	if err != nil {
 		return nil, err
 	}
+	defer dataFile.Close()
+	
 	if _, err := io.Copy(hash, dataFile); err != nil {
-		dataFile.Close()
 		return nil, err
 	}
-	dataFile.Close()
 
 	// Store metadata - use URL-safe base64 encoded SHA256
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
