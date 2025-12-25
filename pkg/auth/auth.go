@@ -273,6 +273,17 @@ func (a *AWS4Authenticator) createCanonicalRequestHeader(r *http.Request, signed
 	return a.createCanonicalRequestInternal(r, signedHeaders, false)
 }
 
+func pathEscape(p string) string {
+	item := strings.Split(p, "/")
+	for i, v := range item {
+		if v == "" {
+			continue
+		}
+		item[i] = url.QueryEscape(v)
+	}
+	return strings.Join(item, "/")
+}
+
 // createCanonicalRequestInternal creates a canonical request for AWS Signature V4
 // isQueryAuth: when true, excludes X-Amz-Signature from query params and uses UNSIGNED-PAYLOAD
 func (a *AWS4Authenticator) createCanonicalRequestInternal(r *http.Request, signedHeaders string, isQueryAuth bool) string {
@@ -280,7 +291,7 @@ func (a *AWS4Authenticator) createCanonicalRequestInternal(r *http.Request, sign
 	method := r.Method
 
 	// URI
-	uri := r.URL.Path
+	uri := pathEscape(r.URL.Path)
 	if uri == "" {
 		uri = "/"
 	}
