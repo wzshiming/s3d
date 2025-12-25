@@ -255,9 +255,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	defer os.Remove(tmpFile.Name())
 
-	hash := sha256.New()
-
-	// Concatenate parts in order
+	// Concatenate parts in order using sendfile for better performance
 	for _, part := range parts {
 		// Strip quotes from ETag if present (client may send quoted ETags)
 		etag := strings.Trim(part.ETag, `"`)
@@ -268,7 +266,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 			return nil, err
 		}
 
-		if _, err := io.Copy(io.MultiWriter(tmpFile, hash), partFile); err != nil {
+		if _, err := copyFileWithSendfile(tmpFile, partFile); err != nil {
 			partFile.Close()
 			tmpFile.Close()
 			return nil, err
@@ -281,6 +279,18 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
 		return nil, err
 	}
+
+	// Calculate hash from the final file
+	hash := sha256.New()
+	dataFile, err := os.Open(dataPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(hash, dataFile); err != nil {
+		dataFile.Close()
+		return nil, err
+	}
+	dataFile.Close()
 
 	// Store metadata - use URL-safe base64 encoded SHA256
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
