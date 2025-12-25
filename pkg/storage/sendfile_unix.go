@@ -23,7 +23,23 @@ func isSendfileUnsupported(err error) bool {
 }
 
 // copyFileWithSendfile copies data from src to dst using sendfile for better performance.
-// It returns the number of bytes copied and any error encountered.
+//
+// This function uses the syscall.Sendfile system call, which performs zero-copy data transfer
+// directly in kernel space between file descriptors, avoiding expensive user-space copies.
+//
+// Key behaviors:
+//   - Transfers data in chunks (up to 1GB each) to avoid integer overflow on 32-bit systems
+//   - Falls back to io.Copy if sendfile is not supported (EINVAL, ENOSYS, ENOTSUP, EOPNOTSUPP)
+//   - Fallback only occurs if no data has been written yet to avoid partial data corruption
+//   - Returns the number of bytes copied and any error encountered
+//
+// Parameters:
+//   - dst: Destination file (must be opened for writing)
+//   - src: Source file (must be opened for reading)
+//
+// Returns:
+//   - Number of bytes successfully copied
+//   - Error if the operation fails
 func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 	// Get source file size
 	srcInfo, err := src.Stat()
@@ -57,6 +73,8 @@ func copyFileWithSendfile(dst *os.File, src *os.File) (int64, error) {
 			// Only fall back if no data has been written yet
 			if isSendfileUnsupported(err) && written == 0 {
 				// Reset source file position before fallback
+				// Note: dst position is already at the correct location since
+				// written == 0 means sendfile hasn't modified it yet
 				if _, seekErr := src.Seek(0, io.SeekStart); seekErr != nil {
 					return 0, seekErr
 				}
