@@ -46,9 +46,19 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.authenticate(r)
 		if err != nil {
-			err := Error{
-				Code:    "AccessDenied",
-				Message: "Access Denied",
+			// Use specific error code if AuthError is returned
+			var errResp Error
+			if authErr, ok := err.(*AuthError); ok {
+				errResp = Error{
+					Code:    authErr.Code,
+					Message: authErr.Message,
+				}
+			} else {
+				// Default to AccessDenied for other errors
+				errResp = Error{
+					Code:    "AccessDenied",
+					Message: "Access Denied",
+				}
 			}
 
 			w.Header().Set("Content-Type", "application/xml")
@@ -57,7 +67,7 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			if _, writeErr := w.Write([]byte(xml.Header)); writeErr != nil {
 				return
 			}
-			if encodeErr := xml.NewEncoder(w).Encode(err); encodeErr != nil {
+			if encodeErr := xml.NewEncoder(w).Encode(errResp); encodeErr != nil {
 				return
 			}
 			return
@@ -80,10 +90,10 @@ func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
 		if strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256") {
 			return a.authenticateV4Header(r, authHeader)
 		}
-		return "", fmt.Errorf("unsupported authorization type")
+		return "", NewAuthError("InvalidArgument", "Unsupported authorization type")
 	}
 
-	return "", fmt.Errorf("missing or invalid authentication information")
+	return "", NewAuthError("AccessDenied", "Missing or invalid authentication information")
 }
 
 // authenticateV4Query validates AWS Signature Version 4 query string authentication
@@ -100,16 +110,16 @@ func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error)
 
 	// Validate required parameters
 	if algorithm != "AWS4-HMAC-SHA256" {
-		return "", fmt.Errorf("invalid or missing algorithm")
+		return "", NewAuthError("InvalidArgument", "Invalid or missing algorithm")
 	}
 	if credential == "" || date == "" || signedHeaders == "" || signature == "" {
-		return "", fmt.Errorf("missing required query parameters")
+		return "", NewAuthError("InvalidArgument", "Missing required query parameters")
 	}
 
 	// Parse credential
 	credParts := strings.Split(credential, "/")
 	if len(credParts) < 5 {
-		return "", fmt.Errorf("invalid credential format")
+		return "", NewAuthError("InvalidArgument", "Invalid credential format")
 	}
 
 	accessKeyID := credParts[0]
@@ -120,7 +130,7 @@ func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error)
 	// Check if credentials exist
 	secretAccessKey, exists := a.credentials[accessKeyID]
 	if !exists {
-		return "", fmt.Errorf("invalid access key")
+		return "", NewAuthError("InvalidAccessKeyId", "The AWS access key ID you provided does not exist in our records")
 	}
 
 	// Validate expiration if provided
@@ -128,19 +138,19 @@ func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error)
 		// Parse the X-Amz-Date timestamp (format: 20230101T000000Z)
 		requestTime, err := parseAmzDate(date)
 		if err != nil {
-			return "", fmt.Errorf("invalid X-Amz-Date format: %v", err)
+			return "", NewAuthError("InvalidArgument", fmt.Sprintf("Invalid X-Amz-Date format: %v", err))
 		}
 
 		// Parse expires duration (in seconds)
 		expiresSeconds, err := strconv.Atoi(expires)
 		if err != nil {
-			return "", fmt.Errorf("invalid X-Amz-Expires value: %v", err)
+			return "", NewAuthError("InvalidArgument", fmt.Sprintf("Invalid X-Amz-Expires value: %v", err))
 		}
 
 		// Check if URL has expired
 		expirationTime := requestTime.Add(time.Duration(expiresSeconds) * time.Second)
 		if time.Now().After(expirationTime) {
-			return "", fmt.Errorf("presigned URL has expired")
+			return "", NewAuthError("AccessDenied", "Presigned URL has expired")
 		}
 	}
 
@@ -151,7 +161,7 @@ func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error)
 	}
 
 	if signature != expectedSignature {
-		return "", fmt.Errorf("signature does not match")
+		return "", NewAuthError("SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided")
 	}
 
 	return accessKeyID, nil
@@ -162,7 +172,7 @@ func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader str
 	// Parse authorization header
 	// Format: AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=...
 	if !strings.HasPrefix(authHeader, "AWS4-HMAC-SHA256 ") {
-		return "", fmt.Errorf("invalid authorization header format")
+		return "", NewAuthError("InvalidArgument", "Invalid authorization header format")
 	}
 
 	authParams := strings.TrimPrefix(authHeader, "AWS4-HMAC-SHA256 ")
@@ -179,13 +189,13 @@ func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader str
 	signedHeaders := params["SignedHeaders"]
 
 	if credential == "" || signature == "" || signedHeaders == "" {
-		return "", fmt.Errorf("missing required authorization parameters")
+		return "", NewAuthError("InvalidArgument", "Missing required authorization parameters")
 	}
 
 	// Parse credential
 	credParts := strings.Split(credential, "/")
 	if len(credParts) < 5 {
-		return "", fmt.Errorf("invalid credential format")
+		return "", NewAuthError("InvalidArgument", "Invalid credential format")
 	}
 
 	accessKeyID := credParts[0]
@@ -196,7 +206,7 @@ func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader str
 	// Check if credentials exist
 	secretAccessKey, exists := a.credentials[accessKeyID]
 	if !exists {
-		return "", fmt.Errorf("invalid access key")
+		return "", NewAuthError("InvalidAccessKeyId", "The AWS access key ID you provided does not exist in our records")
 	}
 
 	// Calculate expected signature
@@ -206,7 +216,7 @@ func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader str
 	}
 
 	if signature != expectedSignature {
-		return "", fmt.Errorf("signature does not match")
+		return "", NewAuthError("SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided")
 	}
 
 	return accessKeyID, nil
