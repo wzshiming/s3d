@@ -65,8 +65,8 @@ func TestAuthenticateMissingHeader(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected authentication to fail with missing header")
 	}
-	if err.Error() != "missing or invalid authentication information" {
-		t.Fatalf("Expected 'missing or invalid authentication information' error, got: %v", err)
+	if err.Error() != "Missing or invalid authentication information" {
+		t.Fatalf("Expected 'Missing or invalid authentication information' error, got: %v", err)
 	}
 }
 
@@ -81,8 +81,8 @@ func TestAuthenticateUnsupportedType(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected authentication to fail with unsupported type")
 	}
-	if err.Error() != "unsupported authorization type" {
-		t.Fatalf("Expected 'unsupported authorization type' error, got: %v", err)
+	if err.Error() != "Unsupported authorization type" {
+		t.Fatalf("Expected 'Unsupported authorization type' error, got: %v", err)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestAuthenticateInvalidCredential(t *testing.T) {
 		t.Fatal("Expected authentication to fail with invalid access key")
 	}
 	// Error could be either invalid access key or missing required params depending on parsing
-	expectedErrors := []string{"invalid access key", "missing required authorization parameters", "invalid authorization header format"}
+	expectedErrors := []string{"The AWS access key ID you provided does not exist in our records", "Missing required authorization parameters", "Invalid authorization header format"}
 	errorMatched := false
 	for _, expected := range expectedErrors {
 		if err.Error() == expected {
@@ -364,8 +364,8 @@ func TestAuthenticateV4QueryInvalidAccessKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected authentication to fail with invalid access key")
 	}
-	if err.Error() != "invalid access key" {
-		t.Fatalf("Expected 'invalid access key' error, got: %v", err)
+	if err.Error() != "The AWS access key ID you provided does not exist in our records" {
+		t.Fatalf("Expected 'The AWS access key ID you provided does not exist in our records' error, got: %v", err)
 	}
 }
 
@@ -475,8 +475,8 @@ func TestAuthenticateV4QueryExpired(t *testing.T) {
 		t.Fatal("Expected authentication to fail with expired presigned URL")
 	}
 
-	if err.Error() != "presigned URL has expired" {
-		t.Fatalf("Expected 'presigned URL has expired' error, got: %v", err)
+	if err.Error() != "Presigned URL has expired" {
+		t.Fatalf("Expected 'Presigned URL has expired' error, got: %v", err)
 	}
 }
 
