@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -47,8 +48,9 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 		_, err := a.authenticate(r)
 		if err != nil {
 			// Use specific error code if AuthError is returned
+			var authErr *AuthError
 			var errResp Error
-			if authErr, ok := err.(*AuthError); ok {
+			if errors.As(err, &authErr) {
 				errResp = Error{
 					Code:    authErr.Code,
 					Message: authErr.Message,
