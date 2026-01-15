@@ -2,6 +2,7 @@ package storage
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -86,4 +87,50 @@ func (s *Storage) BucketExists(bucket string) bool {
 
 	info, err := os.Stat(bucketPath)
 	return err == nil && info.IsDir()
+}
+
+// GetBucketLogging retrieves the bucket logging configuration
+func (s *Storage) GetBucketLogging(bucket string) (*LoggingConfig, error) {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if !s.BucketExists(bucket) {
+		return nil, ErrBucketNotFound
+	}
+
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+	metadata, err := loadBucketMetadata(metaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata.LoggingEnabled, nil
+}
+
+// PutBucketLogging sets the bucket logging configuration
+func (s *Storage) PutBucketLogging(bucket string, loggingConfig *LoggingConfig) error {
+	bucketPath, err := s.safePath(bucket, "")
+	if err != nil {
+		return err
+	}
+
+	if !s.BucketExists(bucket) {
+		return ErrBucketNotFound
+	}
+
+	metaPath := filepath.Join(bucketPath, bucketMetaFile)
+
+	// Load existing metadata
+	metadata, err := loadBucketMetadata(metaPath)
+	if err != nil {
+		return err
+	}
+
+	// Update logging configuration
+	metadata.LoggingEnabled = loggingConfig
+
+	// Save metadata
+	return saveBucketMetadata(metaPath, metadata)
 }

@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func TestBucketOperations(t *testing.T) {
@@ -295,6 +297,219 @@ func TestListBucketsPrefix(t *testing.T) {
 
 		if !found {
 			t.Fatal("Expected bucket bbb-test-bucket not found")
+		}
+	})
+}
+
+func TestBucketLogging(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-bucket-logging"
+
+	// Create bucket for testing
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	// Test GetBucketLogging - Empty by default
+	t.Run("GetBucketLogging_Empty", func(t *testing.T) {
+		output, err := ts.client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("GetBucketLogging failed: %v", err)
+		}
+		if output.LoggingEnabled != nil {
+			t.Fatal("Expected logging to be disabled by default")
+		}
+	})
+
+	// Test PutBucketLogging - Enable logging
+	t.Run("PutBucketLogging_Enable", func(t *testing.T) {
+		_, err := ts.client.PutBucketLogging(ctx, &s3.PutBucketLoggingInput{
+			Bucket: aws.String(bucketName),
+			BucketLoggingStatus: &s3types.BucketLoggingStatus{
+				LoggingEnabled: &s3types.LoggingEnabled{
+					TargetBucket: aws.String("target-bucket"),
+					TargetPrefix: aws.String("logs/"),
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("PutBucketLogging failed: %v", err)
+		}
+	})
+
+	// Test GetBucketLogging - Verify enabled
+	t.Run("GetBucketLogging_Enabled", func(t *testing.T) {
+		output, err := ts.client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("GetBucketLogging failed: %v", err)
+		}
+		if output.LoggingEnabled == nil {
+			t.Fatal("Expected logging to be enabled")
+		}
+		if *output.LoggingEnabled.TargetBucket != "target-bucket" {
+			t.Fatalf("Expected target bucket 'target-bucket', got %s", *output.LoggingEnabled.TargetBucket)
+		}
+		if *output.LoggingEnabled.TargetPrefix != "logs/" {
+			t.Fatalf("Expected target prefix 'logs/', got %s", *output.LoggingEnabled.TargetPrefix)
+		}
+	})
+
+	// Test PutBucketLogging - Disable logging
+	t.Run("PutBucketLogging_Disable", func(t *testing.T) {
+		_, err := ts.client.PutBucketLogging(ctx, &s3.PutBucketLoggingInput{
+			Bucket: aws.String(bucketName),
+			BucketLoggingStatus: &s3types.BucketLoggingStatus{
+				LoggingEnabled: nil,
+			},
+		})
+		if err != nil {
+			t.Fatalf("PutBucketLogging failed: %v", err)
+		}
+	})
+
+	// Test GetBucketLogging - Verify disabled
+	t.Run("GetBucketLogging_Disabled", func(t *testing.T) {
+		output, err := ts.client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("GetBucketLogging failed: %v", err)
+		}
+		if output.LoggingEnabled != nil {
+			t.Fatal("Expected logging to be disabled")
+		}
+	})
+
+	// Test GetBucketLogging - Non-existent bucket
+	t.Run("GetBucketLogging_NonExistentBucket", func(t *testing.T) {
+		_, err := ts.client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{
+			Bucket: aws.String("non-existent-bucket"),
+		})
+		if err == nil {
+			t.Fatal("Expected error for non-existent bucket")
+		}
+	})
+
+	// Test PutBucketLogging - Non-existent bucket
+	t.Run("PutBucketLogging_NonExistentBucket", func(t *testing.T) {
+		_, err := ts.client.PutBucketLogging(ctx, &s3.PutBucketLoggingInput{
+			Bucket: aws.String("non-existent-bucket"),
+			BucketLoggingStatus: &s3types.BucketLoggingStatus{
+				LoggingEnabled: &s3types.LoggingEnabled{
+					TargetBucket: aws.String("target-bucket"),
+					TargetPrefix: aws.String("logs/"),
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("Expected error for non-existent bucket")
+		}
+	})
+}
+
+func TestBucketLoggingWithRequests(t *testing.T) {
+	ctx := context.Background()
+	sourceBucket := "test-source-bucket"
+	targetBucket := "test-target-bucket"
+
+	// Create source and target buckets
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(sourceBucket),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create source bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(sourceBucket),
+	})
+
+	_, err = ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(targetBucket),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create target bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(targetBucket),
+	})
+
+	// Enable logging on source bucket
+	_, err = ts.client.PutBucketLogging(ctx, &s3.PutBucketLoggingInput{
+		Bucket: aws.String(sourceBucket),
+		BucketLoggingStatus: &s3types.BucketLoggingStatus{
+			LoggingEnabled: &s3types.LoggingEnabled{
+				TargetBucket: aws.String(targetBucket),
+				TargetPrefix: aws.String("logs/"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to enable logging: %v", err)
+	}
+
+	// Make some requests to the source bucket
+	t.Run("PutObject_GeneratesLog", func(t *testing.T) {
+		// Put an object
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(sourceBucket),
+			Key:    aws.String("test-key"),
+			Body:   strings.NewReader("test content"),
+		})
+		if err != nil {
+			t.Fatalf("PutObject failed: %v", err)
+		}
+
+		// Flush logs to ensure they are written
+		ts.handler.FlushLogs()
+
+		// Check if log was written to target bucket
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: aws.String(targetBucket),
+			Prefix: aws.String("logs/"),
+		})
+		if err != nil {
+			t.Fatalf("Failed to list logs: %v", err)
+		}
+
+		if len(output.Contents) == 0 {
+			t.Fatal("Expected at least one log entry, got none")
+		}
+
+		// Verify log content
+		logKey := *output.Contents[0].Key
+		logObj, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(targetBucket),
+			Key:    aws.String(logKey),
+		})
+		if err != nil {
+			t.Fatalf("Failed to get log object: %v", err)
+		}
+		defer logObj.Body.Close()
+
+		// Read log content
+		logContent := make([]byte, 2048)
+		n, _ := logObj.Body.Read(logContent)
+		logLine := string(logContent[:n])
+
+		// Verify log contains expected information
+		if !strings.Contains(logLine, sourceBucket) {
+			t.Errorf("Log should contain source bucket name")
+		}
+		if !strings.Contains(logLine, "REST.PUT.OBJECT") {
+			t.Errorf("Log should contain operation type, got: %s", logLine)
+		}
+		if !strings.Contains(logLine, "200") {
+			t.Errorf("Log should contain status code 200, got: %s", logLine)
 		}
 	})
 }

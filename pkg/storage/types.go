@@ -38,3 +38,14 @@ type MultipartUpload struct {
 	Key      string
 	ModTime  time.Time
 }
+
+// BucketMetadata represents bucket-level configuration
+type BucketMetadata struct {
+	LoggingEnabled *LoggingConfig
+}
+
+// LoggingConfig represents the bucket logging configuration
+type LoggingConfig struct {
+	TargetBucket string
+	TargetPrefix string
+}
