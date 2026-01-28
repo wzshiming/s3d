@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,7 +39,6 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		return nil, err
 	}
 
-	dataPath := filepath.Join(objectDir, dataFile)
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Check if object already exists and load existing metadata
@@ -115,20 +116,29 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 		if err := saveObjectMetadata(metaPath, metadata); err != nil {
 			return nil, err
 		}
-		// No need to create a separate data file
-		// If there was an old data file (object was previously large), clean it up
-		if existingMetadata != nil && len(existingMetadata.Data) == 0 {
-			os.Remove(dataPath)
+
+		// Decrement refcount for old destination if it had a digest
+		if existingMetadata != nil && existingMetadata.Digest != "" {
+			s.decrementRefCount(existingMetadata.Digest)
 		}
 	} else {
-		// Move temp file to data file for larger files
-		if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
+		// Use content-addressable storage for larger files
+		digest := hex.EncodeToString(hash.Sum(nil))
+		metadata.Digest = digest
+
+		// Store the file in .objects directory
+		if err := s.storeContentAddressedObject(tmpFile.Name(), digest); err != nil {
 			return nil, err
 		}
 
-		// Store metadata without inline data
+		// Store metadata with digest reference
 		if err := saveObjectMetadata(metaPath, metadata); err != nil {
 			return nil, err
+		}
+
+		// Decrement refcount for old destination if it had a digest and it's different
+		if existingMetadata != nil && existingMetadata.Digest != "" && existingMetadata.Digest != digest {
+			s.decrementRefCount(existingMetadata.Digest)
 		}
 	}
 
@@ -158,7 +168,6 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		return nil, nil, err
 	}
 
-	dataPath := filepath.Join(objectDir, dataFile)
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Load metadata first
@@ -196,42 +205,53 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		return reader, info, nil
 	}
 
-	// Data is in separate file
-	file, err := os.Open(dataPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, ErrObjectNotFound
+	// Check if data is in content-addressable storage
+	if metadata.Digest != "" {
+		// Data is in .objects directory
+		file, err := s.getContentAddressedObject(metadata.Digest)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil, ErrObjectNotFound
+			}
+			return nil, nil, err
 		}
-		return nil, nil, err
-	}
 
-	// Get file info for size
-	fileInfo, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, nil, err
-	}
+		// Get file info for size
+		fileInfo, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return nil, nil, err
+		}
 
-	// Always use meta file's ModTime
-	metaFileInfo, err := os.Stat(metaPath)
-	if err != nil {
-		file.Close()
-		return nil, nil, err
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(metaPath)
+		if err != nil {
+			file.Close()
+			return nil, nil, err
+		}
+
+		info := &ObjectInfo{
+			Key:         key,
+			Size:        fileInfo.Size(),
+			ETag:        metadata.ETag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: metadata.ContentType,
+		}
+
+		if info.ContentType == "" {
+			info.ContentType = "application/octet-stream"
+		}
+
+		return file, info, nil
 	}
 
 	info := &ObjectInfo{
 		Key:         key,
-		Size:        fileInfo.Size(),
+		Size:        0,
 		ETag:        metadata.ETag,
-		ModTime:     metaFileInfo.ModTime(),
 		ContentType: metadata.ContentType,
 	}
-
-	if info.ContentType == "" {
-		info.ContentType = "application/octet-stream"
-	}
-
-	return file, info, nil
+	return &inlineDataReader{bytes.NewReader([]byte{})}, info, nil
 }
 
 // DeleteObject deletes an object
@@ -249,6 +269,16 @@ func (s *Storage) DeleteObject(bucket, key string) error {
 	metaPath := filepath.Join(objectDir, metaFile)
 	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
 		return ErrObjectNotFound
+	}
+
+	// Load metadata to check if we need to decrement refcount
+	metadata, err := loadObjectMetadata(metaPath)
+	if err == nil && metadata != nil && metadata.Digest != "" {
+		// Decrement reference count for content-addressed object
+		if err := s.decrementRefCount(metadata.Digest); err != nil {
+			// Log error but don't fail the delete operation
+			// The object metadata will be deleted anyway
+		}
 	}
 
 	// Get bucket path before deleting the object
@@ -328,18 +358,24 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 
 			var size int64
 
-			// Check if data is inline or in separate file
+			// Check if data is inline or in content-addressable storage
 			if metadata != nil && len(metadata.Data) > 0 {
 				// Data is inline
 				size = int64(len(metadata.Data))
-			} else {
-				// Data is in separate file
-				dataPath := filepath.Join(objectDir, dataFile)
-				dataInfo, err := os.Stat(dataPath)
+			} else if metadata != nil && metadata.Digest != "" {
+				// Data is in content-addressable storage
+				objPath, err := s.objectPath(metadata.Digest)
 				if err != nil {
-					return nil // Skip if data file doesn't exist
+					return fmt.Errorf("invalid digest for object %s: %v", objectKey, err)
+				}
+				dataInfo, err := os.Stat(objPath)
+				if err != nil {
+					return fmt.Errorf("failed to stat content-addressed object for %s: %v", objectKey, err)
 				}
 				size = dataInfo.Size()
+			} else {
+				// No valid data reference - skip this object
+				return nil
 			}
 
 			// Always use meta file's ModTime
@@ -425,7 +461,6 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	}
 
 	dstMetaPath := filepath.Join(dstObjectDir, metaFile)
-	dstDataPath := filepath.Join(dstObjectDir, dataFile)
 
 	// Check if destination object already exists
 	var existingDstMetadata *objectMetadata
@@ -445,12 +480,21 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		var size int64
 		if len(existingDstMetadata.Data) > 0 {
 			size = int64(len(existingDstMetadata.Data))
-		} else {
-			dataFileInfo, err := os.Stat(dstDataPath)
+		} else if existingDstMetadata.Digest != "" {
+			// Get size from content-addressed object
+			objFile, err := s.getContentAddressedObject(existingDstMetadata.Digest)
 			if err != nil {
 				return nil, err
 			}
-			size = dataFileInfo.Size()
+			defer objFile.Close()
+			fileInfo, err := objFile.Stat()
+			if err != nil {
+				return nil, err
+			}
+			size = fileInfo.Size()
+		} else {
+			// No valid data reference
+			return nil, ErrObjectNotFound
 		}
 
 		// Always use meta file's ModTime
@@ -482,9 +526,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			return nil, err
 		}
 
-		// If destination previously had separate data file, clean it up
-		if existingDstMetadata != nil && len(existingDstMetadata.Data) == 0 {
-			os.Remove(dstDataPath)
+		// Decrement refcount for old destination if it had a digest
+		if existingDstMetadata != nil && existingDstMetadata.Digest != "" {
+			s.decrementRefCount(existingDstMetadata.Digest)
 		}
 
 		// Always use meta file's ModTime
@@ -502,68 +546,59 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}, nil
 	}
 
-	// Data is in separate file
-	srcDataPath := filepath.Join(srcObjectDir, dataFile)
-	srcFile, err := os.Open(srcDataPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrObjectNotFound
+	// Check if source data is in content-addressable storage
+	if srcMetadata.Digest != "" {
+		// Data is in .objects - increment refcount first, then copy the digest reference
+		if err := s.incrementRefCount(srcMetadata.Digest); err != nil {
+			return nil, err
 		}
-		return nil, err
-	}
-	defer srcFile.Close()
 
-	// Create temp file for destination
-	tmpFile, err := s.tempFile()
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(tmpFile.Name())
+		dstMetadata := &objectMetadata{
+			ContentType: contentType,
+			ETag:        srcMetadata.ETag,
+			Digest:      srcMetadata.Digest,
+		}
 
-	// Copy data and calculate SHA256
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+		if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
+			// Rollback refcount increment
+			s.decrementRefCount(srcMetadata.Digest)
+			return nil, err
+		}
 
-	if _, err := io.Copy(writer, srcFile); err != nil {
-		tmpFile.Close()
-		return nil, err
-	}
-	tmpFile.Close()
+		// Decrement refcount for old destination if it had a digest
+		if existingDstMetadata != nil && existingDstMetadata.Digest != "" {
+			s.decrementRefCount(existingDstMetadata.Digest)
+		}
 
-	// Move temp file to final location
-	if err := os.Rename(tmpFile.Name(), dstDataPath); err != nil {
-		return nil, err
-	}
+		// Fallback to reading from content-addressed object
+		objFile, err := s.getContentAddressedObject(srcMetadata.Digest)
+		if err != nil {
+			return nil, err
+		}
+		defer objFile.Close()
 
-	// Store metadata - use URL-safe base64 encoded SHA256
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	dstMetadata := &objectMetadata{
-		ContentType: contentType,
-		ETag:        etag,
-	}
-	if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
-		return nil, err
-	}
+		fileInfo, err := objFile.Stat()
+		if err != nil {
+			return nil, err
+		}
 
-	// Get size from data file
-	dataFileInfo, err := os.Stat(dstDataPath)
-	if err != nil {
-		return nil, err
-	}
+		// Always use meta file's ModTime
+		metaFileInfo, err := os.Stat(dstMetaPath)
+		if err != nil {
+			return nil, err
+		}
 
-	// Always use meta file's ModTime
-	metaFileInfo, err := os.Stat(dstMetaPath)
-	if err != nil {
-		return nil, err
+		return &ObjectInfo{
+			Key:         dstKey,
+			Size:        fileInfo.Size(),
+			ETag:        srcMetadata.ETag,
+			ModTime:     metaFileInfo.ModTime(),
+			ContentType: contentType,
+		}, nil
 	}
 
-	return &ObjectInfo{
-		Key:         dstKey,
-		Size:        dataFileInfo.Size(),
-		ETag:        etag,
-		ModTime:     metaFileInfo.ModTime(),
-		ContentType: contentType,
-	}, nil
+	// No digest and no inline data - source is corrupted or invalid
+	return nil, ErrObjectNotFound
 }
 
 // RenameObject renames an object within the same bucket

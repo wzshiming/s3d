@@ -19,7 +19,7 @@ func TestDeleteObjectCleansUpEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestRenameObjectCleansUpEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestRenameObjectWithSameContentCleansUpEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestAbortMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestCompleteMultipartUploadCleansUpEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -301,7 +301,7 @@ func TestDeleteObjectDoesNotCleanupNonEmptyFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -349,7 +349,7 @@ func TestCleanupStopsAtBucketBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
