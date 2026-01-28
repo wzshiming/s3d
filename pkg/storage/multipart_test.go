@@ -30,7 +30,7 @@ func TestMultipartUpload(t *testing.T) {
 	}
 
 	// Initiate multipart upload
-	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, "")
+	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestAbortMultipartUpload(t *testing.T) {
 	}
 
 	// Initiate multipart upload
-	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, "")
+	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
@@ -159,17 +159,17 @@ func TestListMultipartUploads(t *testing.T) {
 	}
 
 	// Initiate multiple uploads
-	uploadID1, err := store.InitiateMultipartUpload(bucketName, "file1.txt", "")
+	uploadID1, err := store.InitiateMultipartUpload(bucketName, "file1.txt", Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
 
-	uploadID2, err := store.InitiateMultipartUpload(bucketName, "file2.txt", "")
+	uploadID2, err := store.InitiateMultipartUpload(bucketName, "file2.txt", Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
 
-	uploadID3, err := store.InitiateMultipartUpload(bucketName, "prefix/file3.txt", "")
+	uploadID3, err := store.InitiateMultipartUpload(bucketName, "prefix/file3.txt", Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestListParts(t *testing.T) {
 	}
 
 	// Initiate upload
-	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, "")
+	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
 	if err != nil {
 		t.Fatalf("InitiateMultipartUpload failed: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestInvalidPartNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uploadID, err := store.InitiateMultipartUpload("test-bucket", "key.txt", "")
+	uploadID, err := store.InitiateMultipartUpload("test-bucket", "key.txt", Metadata{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestMultipartUploadNonexistentBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	_, err = store.InitiateMultipartUpload("nonexistent", "key.txt", "")
+	_, err = store.InitiateMultipartUpload("nonexistent", "key.txt", Metadata{})
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
@@ -356,7 +356,7 @@ func TestCompleteWithWrongBucketKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uploadID, err := store.InitiateMultipartUpload("bucket1", "key1.txt", "")
+	uploadID, err := store.InitiateMultipartUpload("bucket1", "key1.txt", Metadata{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestMultipartUploadPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uploadID, err := store.InitiateMultipartUpload("test-bucket", "key.txt", "")
+	uploadID, err := store.InitiateMultipartUpload("test-bucket", "key.txt", Metadata{})
 	if err != nil {
 		t.Fatal(err)
 	}

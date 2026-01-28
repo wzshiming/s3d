@@ -24,7 +24,7 @@ func (r *inlineDataReader) Close() error {
 }
 
 // PutObject stores an object
-func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType string) (*ObjectInfo, error) {
+func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -89,18 +89,26 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 			return nil, err
 		}
 
+		// If metadata is different, update it
+		if existingMetadata != nil && !metadataEqual(existingMetadata.Metadata, userMetadata) {
+			existingMetadata.Metadata = userMetadata
+			if err := saveObjectMetadata(metaPath, existingMetadata); err != nil {
+				return nil, err
+			}
+		}
+
 		return &ObjectInfo{
-			Key:         key,
-			Size:        fileInfo.Size(),
-			ETag:        etag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: contentType,
+			Key:      key,
+			Size:     fileInfo.Size(),
+			ETag:     etag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: existingMetadata.Metadata,
 		}, nil
 	}
 
 	metadata := &objectMetadata{
-		ContentType: contentType,
-		ETag:        etag,
+		ETag:     etag,
+		Metadata: userMetadata,
 	}
 
 	// If file is small enough, embed it in metadata
@@ -149,11 +157,11 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, contentType stri
 	}
 
 	return &ObjectInfo{
-		Key:         key,
-		Size:        fileInfo.Size(),
-		ETag:        etag,
-		ModTime:     metaFileInfo.ModTime(),
-		ContentType: contentType,
+		Key:      key,
+		Size:     fileInfo.Size(),
+		ETag:     etag,
+		ModTime:  metaFileInfo.ModTime(),
+		Metadata: userMetadata,
 	}, nil
 }
 
@@ -191,15 +199,11 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		}
 
 		info := &ObjectInfo{
-			Key:         key,
-			Size:        int64(len(metadata.Data)),
-			ETag:        metadata.ETag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: metadata.ContentType,
-		}
-
-		if info.ContentType == "" {
-			info.ContentType = "application/octet-stream"
+			Key:      key,
+			Size:     int64(len(metadata.Data)),
+			ETag:     metadata.ETag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: metadata.Metadata,
 		}
 
 		return reader, info, nil
@@ -231,25 +235,21 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		}
 
 		info := &ObjectInfo{
-			Key:         key,
-			Size:        fileInfo.Size(),
-			ETag:        metadata.ETag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: metadata.ContentType,
-		}
-
-		if info.ContentType == "" {
-			info.ContentType = "application/octet-stream"
+			Key:      key,
+			Size:     fileInfo.Size(),
+			ETag:     metadata.ETag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: metadata.Metadata,
 		}
 
 		return file, info, nil
 	}
 
 	info := &ObjectInfo{
-		Key:         key,
-		Size:        0,
-		ETag:        metadata.ETag,
-		ContentType: metadata.ContentType,
+		Key:      key,
+		Size:     0,
+		ETag:     metadata.ETag,
+		Metadata: metadata.Metadata,
 	}
 	return &inlineDataReader{bytes.NewReader([]byte{})}, info, nil
 }
@@ -380,11 +380,11 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 
 			// Always use meta file's ModTime
 			objects = append(objects, ObjectInfo{
-				Key:         objectKey,
-				Size:        size,
-				ETag:        metadata.ETag,
-				ModTime:     info.ModTime(),
-				ContentType: metadata.ContentType,
+				Key:      objectKey,
+				Size:     size,
+				ETag:     metadata.ETag,
+				ModTime:  info.ModTime(),
+				Metadata: metadata.Metadata,
 			})
 		}
 
@@ -444,11 +444,6 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		return nil, ErrObjectNotFound
 	}
 
-	contentType := srcMetadata.ContentType
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
 	// Get destination object directory
 	dstObjectDir, err := s.safePath(dstBucket, dstKey)
 	if err != nil {
@@ -504,11 +499,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:         dstKey,
-			Size:        size,
-			ETag:        srcMetadata.ETag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: contentType,
+			Key:      dstKey,
+			Size:     size,
+			ETag:     srcMetadata.ETag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: existingDstMetadata.Metadata,
 		}, nil
 	}
 
@@ -516,9 +511,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	if len(srcMetadata.Data) > 0 {
 		// Data is inline - copy directly
 		dstMetadata := &objectMetadata{
-			ContentType: contentType,
-			ETag:        srcMetadata.ETag,
-			Data:        make([]byte, len(srcMetadata.Data)),
+			ETag:     srcMetadata.ETag,
+			Data:     make([]byte, len(srcMetadata.Data)),
+			Metadata: srcMetadata.Metadata,
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
 
@@ -538,11 +533,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:         dstKey,
-			Size:        int64(len(srcMetadata.Data)),
-			ETag:        srcMetadata.ETag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: contentType,
+			Key:      dstKey,
+			Size:     int64(len(srcMetadata.Data)),
+			ETag:     srcMetadata.ETag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: srcMetadata.Metadata,
 		}, nil
 	}
 
@@ -554,9 +549,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		dstMetadata := &objectMetadata{
-			ContentType: contentType,
-			ETag:        srcMetadata.ETag,
-			Digest:      srcMetadata.Digest,
+			ETag:     srcMetadata.ETag,
+			Digest:   srcMetadata.Digest,
+			Metadata: srcMetadata.Metadata,
 		}
 
 		if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
@@ -589,11 +584,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:         dstKey,
-			Size:        fileInfo.Size(),
-			ETag:        srcMetadata.ETag,
-			ModTime:     metaFileInfo.ModTime(),
-			ContentType: contentType,
+			Key:      dstKey,
+			Size:     fileInfo.Size(),
+			ETag:     srcMetadata.ETag,
+			ModTime:  metaFileInfo.ModTime(),
+			Metadata: srcMetadata.Metadata,
 		}, nil
 	}
 

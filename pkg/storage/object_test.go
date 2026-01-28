@@ -32,7 +32,7 @@ func TestObjectOperations(t *testing.T) {
 	}
 
 	// Put object
-	objInfo, err := store.PutObject(bucketName, objectKey, bytes.NewReader([]byte(objectContent)), "text/plain")
+	objInfo, err := store.PutObject(bucketName, objectKey, bytes.NewReader([]byte(objectContent)), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPathTraversalProtection(t *testing.T) {
 	}
 
 	for _, key := range testCases {
-		_, err := store.PutObject(bucketName, key, bytes.NewReader([]byte("test")), "text/plain")
+		_, err := store.PutObject(bucketName, key, bytes.NewReader([]byte("test")), Metadata{ContentType: "text/plain"})
 		if err == nil {
 			t.Fatalf("Expected error for path traversal attempt: %s", key)
 		}
@@ -163,7 +163,7 @@ func TestCopyObject(t *testing.T) {
 	}
 
 	// Create source object
-	_, err = store.PutObject(srcBucket, srcKey, bytes.NewReader([]byte(content)), "text/plain")
+	_, err = store.PutObject(srcBucket, srcKey, bytes.NewReader([]byte(content)), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestObjectInvalidKeys(t *testing.T) {
 
 	invalidKeys := []string{".", "..", "../file.txt"}
 	for _, key := range invalidKeys {
-		_, err := store.PutObject("test-bucket", key, bytes.NewReader([]byte("test")), "text/plain")
+		_, err := store.PutObject("test-bucket", key, bytes.NewReader([]byte("test")), Metadata{ContentType: "text/plain"})
 		if err != ErrInvalidObjectKey {
 			t.Errorf("PutObject(%q) should return ErrInvalidObjectKey, got %v", key, err)
 		}
@@ -301,7 +301,7 @@ func TestPutObjectNonexistentBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	_, err = store.PutObject("nonexistent", "key.txt", bytes.NewReader([]byte("test")), "text/plain")
+	_, err = store.PutObject("nonexistent", "key.txt", bytes.NewReader([]byte("test")), Metadata{ContentType: "text/plain"})
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
@@ -332,7 +332,7 @@ func TestRenameObject(t *testing.T) {
 	}
 
 	// Create source object
-	_, err = store.PutObject(bucketName, srcKey, bytes.NewReader([]byte(content)), "text/plain")
+	_, err = store.PutObject(bucketName, srcKey, bytes.NewReader([]byte(content)), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	smallKey := "small.txt"
 	smallContent := bytes.Repeat([]byte("x"), 100) // 100 bytes - well under threshold
 
-	objInfo1, err := store.PutObject(bucketName, smallKey, bytes.NewReader(smallContent), "text/plain")
+	objInfo1, err := store.PutObject(bucketName, smallKey, bytes.NewReader(smallContent), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for small file failed: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	largeKey := "large.txt"
 	largeContent := bytes.Repeat([]byte("y"), 5000) // 5000 bytes - over threshold
 
-	objInfo2, err := store.PutObject(bucketName, largeKey, bytes.NewReader(largeContent), "text/plain")
+	objInfo2, err := store.PutObject(bucketName, largeKey, bytes.NewReader(largeContent), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for large file failed: %v", err)
 	}
@@ -618,7 +618,7 @@ func TestInlineDataThreshold(t *testing.T) {
 	atThresholdKey := "at-threshold.txt"
 	atThresholdContent := bytes.Repeat([]byte("z"), 4096)
 
-	_, err = store.PutObject(bucketName, atThresholdKey, bytes.NewReader(atThresholdContent), "text/plain")
+	_, err = store.PutObject(bucketName, atThresholdKey, bytes.NewReader(atThresholdContent), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestInlineDataThreshold(t *testing.T) {
 	aboveThresholdKey := "above-threshold.txt"
 	aboveThresholdContent := bytes.Repeat([]byte("w"), 4097)
 
-	_, err = store.PutObject(bucketName, aboveThresholdKey, bytes.NewReader(aboveThresholdContent), "text/plain")
+	_, err = store.PutObject(bucketName, aboveThresholdKey, bytes.NewReader(aboveThresholdContent), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -672,13 +672,13 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		content := bytes.Repeat([]byte("test"), 100)
 
 		// First put
-		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("First PutObject failed: %v", err)
 		}
 
 		// Second put with same content - should be compatible
-		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), "text/plain")
+		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("Second PutObject with same content failed: %v", err)
 		}
@@ -711,13 +711,13 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 		content2 := []byte("second content different")
 
 		// First put
-		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content1), "text/plain")
+		objInfo1, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content1), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("First PutObject failed: %v", err)
 		}
 
 		// Second put with different content - should overwrite
-		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content2), "text/plain")
+		objInfo2, err := store.PutObject(bucketName, objectKey, bytes.NewReader(content2), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("Second PutObject with different content failed: %v", err)
 		}
@@ -770,13 +770,13 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		content := []byte("shared content")
 
 		// Create source
-		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), "text/plain")
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject source failed: %v", err)
 		}
 
 		// Create destination with same content
-		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), "text/plain")
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject destination failed: %v", err)
 		}
@@ -812,13 +812,13 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		dstContent := []byte("destination content different")
 
 		// Create source
-		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), "text/plain")
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject source failed: %v", err)
 		}
 
 		// Create destination with different content
-		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), "text/plain")
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject destination failed: %v", err)
 		}
@@ -873,13 +873,13 @@ func TestRenameObjectDuplicateCompatibility(t *testing.T) {
 		content := []byte("same content")
 
 		// Create source
-		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), "text/plain")
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject source failed: %v", err)
 		}
 
 		// Create destination with same content
-		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), "text/plain")
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject destination failed: %v", err)
 		}
@@ -917,13 +917,13 @@ func TestRenameObjectDuplicateCompatibility(t *testing.T) {
 		dstContent := []byte("destination content different")
 
 		// Create source
-		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), "text/plain")
+		_, err := store.PutObject(bucketName, srcKey, bytes.NewReader(srcContent), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject source failed: %v", err)
 		}
 
 		// Create destination with different content
-		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), "text/plain")
+		_, err = store.PutObject(bucketName, dstKey, bytes.NewReader(dstContent), Metadata{ContentType: "text/plain"})
 		if err != nil {
 			t.Fatalf("PutObject destination failed: %v", err)
 		}
@@ -977,14 +977,14 @@ func TestContentAddressableStorageDeduplication(t *testing.T) {
 	key1 := "file1.txt"
 	content := bytes.Repeat([]byte("duplicate content"), 300) // ~5100 bytes - over threshold
 
-	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for file1 failed: %v", err)
 	}
 
 	// Create second object with SAME content
 	key2 := "file2.txt"
-	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content), "text/plain")
+	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for file2 failed: %v", err)
 	}
@@ -1122,7 +1122,7 @@ func TestContentAddressableStorageWithDifferentContent(t *testing.T) {
 	key1 := "file1.txt"
 	content1 := bytes.Repeat([]byte("content A"), 500) // ~4500 bytes - over threshold
 
-	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content1), "text/plain")
+	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content1), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for file1 failed: %v", err)
 	}
@@ -1131,7 +1131,7 @@ func TestContentAddressableStorageWithDifferentContent(t *testing.T) {
 	key2 := "file2.txt"
 	content2 := bytes.Repeat([]byte("content B"), 500) // ~4500 bytes - over threshold
 
-	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content2), "text/plain")
+	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content2), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject for file2 failed: %v", err)
 	}
@@ -1217,7 +1217,7 @@ func TestInlineDataNotInObjectsDirectory(t *testing.T) {
 	key := "small.txt"
 	content := []byte("small content")
 
-	_, err = store.PutObject(bucketName, key, bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, key, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
@@ -1286,17 +1286,17 @@ func TestReferenceCountingCleanup(t *testing.T) {
 	key2 := "ref2.txt"
 	key3 := "ref3.txt"
 
-	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject key1 failed: %v", err)
 	}
 
-	_, err = store.PutObject(bucketName, key2, bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, key2, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject key2 failed: %v", err)
 	}
 
-	_, err = store.PutObject(bucketName, key3, bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, key3, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject key3 failed: %v", err)
 	}
@@ -1380,7 +1380,7 @@ func TestReferenceCountingWithCopy(t *testing.T) {
 
 	// Upload original
 	key1 := "original.txt"
-	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), Metadata{ContentType: "text/plain"})
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
