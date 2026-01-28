@@ -19,7 +19,7 @@ func TestMultipartUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-multipart"
 	objectKey := "multipart-object.txt"
 
@@ -102,7 +102,7 @@ func TestAbortMultipartUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-abort"
 	objectKey := "abort-multipart.txt"
 
@@ -149,7 +149,7 @@ func TestListMultipartUploads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-list-uploads"
 
 	// Create bucket
@@ -212,7 +212,7 @@ func TestListParts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-list-parts"
 	objectKey := "test-parts.txt"
 
@@ -276,7 +276,7 @@ func TestInvalidUploadID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestInvalidPartNumber(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestMultipartUploadNonexistentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	_, err = store.InitiateMultipartUpload("nonexistent", "key.txt", "")
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
@@ -348,7 +348,7 @@ func TestCompleteWithWrongBucketKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("bucket1"); err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestMultipartUploadPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -396,12 +396,15 @@ func TestMultipartUploadPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Close the first store to release the DB lock
+	store.Close()
+
 	// Create a new store instance (simulating server restart)
 	store2, err := NewStorage(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store2.Close()
 	// Upload part with the new store - should work if persistence works
 	objInfo, err := store2.UploadPart("test-bucket", "key.txt", uploadID, 1, bytes.NewReader([]byte("test data")))
 	if err != nil {

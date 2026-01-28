@@ -3,6 +3,7 @@ package storage
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -167,14 +168,13 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	hash := sha256.New()
 	writer := io.MultiWriter(tmpFile, hash)
 
-	// Copy data from source (either inline or from data file)
+	// Copy data from source (either inline or digest)
 	if len(srcMetadata.Data) > 0 {
 		// Data is inline
 		_, err = writer.Write(srcMetadata.Data)
-	} else {
-		// Data is in separate file
-		srcDataPath := filepath.Join(srcObjectDir, dataFile)
-		srcFile, err := os.Open(srcDataPath)
+	} else if srcMetadata.Digest != "" {
+		// Data is in content-addressable storage
+		srcFile, err := s.getContentAddressedObject(srcMetadata.Digest)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, ErrObjectNotFound
@@ -240,7 +240,6 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	dataPath := filepath.Join(objectDir, dataFile)
 	metaPath := filepath.Join(objectDir, metaFile)
 
 	// Create object directory
@@ -277,8 +276,9 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	tmpFile.Close()
 
-	// Move temp file to final location
-	if err := os.Rename(tmpFile.Name(), dataPath); err != nil {
+	// Get file size to determine storage method
+	fileInfo, err := os.Stat(tmpFile.Name())
+	if err != nil {
 		return nil, err
 	}
 
@@ -291,19 +291,33 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
+	var existingMetadata *objectMetadata
+	if _, err := os.Stat(metaPath); err == nil {
+		existingMetadata, _ = loadObjectMetadata(metaPath)
+	}
+
+	// Use content-addressable storage for all multipart uploads (they're typically large)
+	digest := hex.EncodeToString(hash.Sum(nil))
+
 	// Create object metadata from upload metadata
-	objectMetadata := &objectMetadata{
+	meta := &objectMetadata{
 		ContentType: uploadMetadata.ContentType,
 		ETag:        etag,
+		Digest:      digest,
 	}
-	if err := saveObjectMetadata(metaPath, objectMetadata); err != nil {
+
+	// Store in content-addressable storage
+	if err := s.storeContentAddressedObject(tmpFile.Name(), digest); err != nil {
 		return nil, err
 	}
 
-	// Get size from data file
-	dataFileInfo, err := os.Stat(dataPath)
-	if err != nil {
+	if err := saveObjectMetadata(metaPath, meta); err != nil {
 		return nil, err
+	}
+	// Decrement refcount for old object if it had a digest and it's different
+	// Check if object already exists at destination and load metadata
+	if existingMetadata != nil && existingMetadata.Digest != "" && existingMetadata.Digest != digest {
+		s.decrementRefCount(existingMetadata.Digest)
 	}
 
 	// Always use meta file's ModTime
@@ -312,7 +326,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	contentType := objectMetadata.ContentType
+	contentType := meta.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -332,7 +346,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	return &ObjectInfo{
 		Key:         key,
-		Size:        dataFileInfo.Size(),
+		Size:        fileInfo.Size(),
 		ETag:        etag,
 		ModTime:     metaFileInfo.ModTime(),
 		ContentType: contentType,

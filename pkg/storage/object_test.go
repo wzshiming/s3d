@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestObjectOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	objectKey := "test-object.txt"
 	objectContent := "Hello, World!"
@@ -103,7 +104,7 @@ func TestPathTraversalProtection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-security"
 
 	// Create bucket
@@ -143,7 +144,7 @@ func TestCopyObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	srcBucket := "test-bucket-copy-src"
 	dstBucket := "test-bucket-copy-dst"
 	srcKey := "source.txt"
@@ -209,7 +210,7 @@ func TestGetNonexistentObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +232,7 @@ func TestObjectInvalidKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestCopyNonexistentObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("src"); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +282,7 @@ func TestListObjectsNonexistentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	_, _, err = store.ListObjects("nonexistent", "", "", "", 0)
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
@@ -299,7 +300,7 @@ func TestPutObjectNonexistentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	_, err = store.PutObject("nonexistent", "key.txt", bytes.NewReader([]byte("test")), "text/plain")
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
@@ -318,7 +319,7 @@ func TestRenameObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket-rename"
 	srcKey := "original.txt"
 	dstKey := "renamed.txt"
@@ -380,7 +381,7 @@ func TestRenameNonexistentObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	if err := store.CreateBucket("test-bucket"); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +403,7 @@ func TestRenameObjectNonexistentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	err = store.RenameObject("nonexistent", "key.txt", "renamed.txt")
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
@@ -421,7 +422,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 
 	// Create bucket
@@ -476,7 +477,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 		t.Error("ETag mismatch for small file")
 	}
 
-	// Test 2: Large file should have separate data file (>4096 bytes)
+	// Test 2: Large file should use content-addressable storage (>4096 bytes)
 	largeKey := "large.txt"
 	largeContent := bytes.Repeat([]byte("y"), 5000) // 5000 bytes - over threshold
 
@@ -485,11 +486,11 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 		t.Fatalf("PutObject for large file failed: %v", err)
 	}
 
-	// Verify data file exists for large files
+	// Verify data file doesn't exist for large files (using content-addressable storage now)
 	objectDir2, _ := store.safePath(bucketName, largeKey)
 	dataPath2 := objectDir2 + "/data"
-	if _, err := os.Stat(dataPath2); err != nil {
-		t.Errorf("Large file should have a separate data file: %v", err)
+	if _, err := os.Stat(dataPath2); !os.IsNotExist(err) {
+		t.Error("Large file should not have a separate data file in object directory (should be in .objects)")
 	}
 
 	// Read the large file back
@@ -606,7 +607,7 @@ func TestInlineDataThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	err = store.CreateBucket(bucketName)
 	if err != nil {
@@ -638,11 +639,11 @@ func TestInlineDataThreshold(t *testing.T) {
 		t.Fatalf("PutObject failed: %v", err)
 	}
 
-	// File above threshold should have separate data file
+	// File above threshold should use content-addressable storage (no separate data file in object dir)
 	objectDir2, _ := store.safePath(bucketName, aboveThresholdKey)
 	dataPath2 := objectDir2 + "/data"
-	if _, err := os.Stat(dataPath2); err != nil {
-		t.Error("File above threshold (4097 bytes) should have separate data file")
+	if _, err := os.Stat(dataPath2); !os.IsNotExist(err) {
+		t.Error("File above threshold (4097 bytes) should not have data file in object directory (should be in .objects)")
 	}
 }
 
@@ -658,7 +659,7 @@ func TestPutObjectDuplicateCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	err = store.CreateBucket(bucketName)
 	if err != nil {
@@ -755,7 +756,7 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	err = store.CreateBucket(bucketName)
 	if err != nil {
@@ -858,7 +859,7 @@ func TestRenameObjectDuplicateCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	err = store.CreateBucket(bucketName)
 	if err != nil {
@@ -951,4 +952,492 @@ func TestRenameObjectDuplicateCompatibility(t *testing.T) {
 			t.Error("Destination should have source content after rename (overwrite)")
 		}
 	})
+}
+
+// TestContentAddressableStorageDeduplication tests that duplicate files share the same physical storage
+func TestContentAddressableStorageDeduplication(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create first object with content that exceeds inline threshold
+	key1 := "file1.txt"
+	content := bytes.Repeat([]byte("duplicate content"), 300) // ~5100 bytes - over threshold
+
+	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject for file1 failed: %v", err)
+	}
+
+	// Create second object with SAME content
+	key2 := "file2.txt"
+	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject for file2 failed: %v", err)
+	}
+
+	// ETags should match since content is the same
+	if objInfo1.ETag != objInfo2.ETag {
+		t.Errorf("ETags should match for identical content: %s != %s", objInfo1.ETag, objInfo2.ETag)
+	}
+
+	// Verify both objects can be read back with correct content
+	reader1, _, err := store.GetObject(bucketName, key1)
+	if err != nil {
+		t.Fatalf("GetObject for file1 failed: %v", err)
+	}
+	defer reader1.Close()
+
+	data1, err := io.ReadAll(reader1)
+	if err != nil {
+		t.Fatalf("Failed to read file1: %v", err)
+	}
+
+	if !bytes.Equal(data1, content) {
+		t.Error("Content doesn't match for file1")
+	}
+
+	reader2, _, err := store.GetObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("GetObject for file2 failed: %v", err)
+	}
+	defer reader2.Close()
+
+	data2, err := io.ReadAll(reader2)
+	if err != nil {
+		t.Fatalf("Failed to read file2: %v", err)
+	}
+
+	if !bytes.Equal(data2, content) {
+		t.Error("Content doesn't match for file2")
+	}
+
+	// Verify that .objects directory exists and contains the deduplicated content
+	objectsDir := store.objectsDir
+	if _, err := os.Stat(objectsDir); err != nil {
+		t.Errorf(".objects directory should exist: %v", err)
+	}
+
+	// Count files in .objects directory - should be exactly 1 content file
+	// (refcounts are stored in BoltDB, not as separate files)
+	fileCount := 0
+	err = filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			fileCount++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk .objects directory: %v", err)
+	}
+
+	if fileCount != 1 {
+		t.Errorf("Expected 1 content file in .objects (deduplicated), got %d", fileCount)
+	}
+
+	// Test copy also uses the same content-addressed object
+	key3 := "file3.txt"
+	_, err = store.CopyObject(bucketName, key1, bucketName, key3)
+	if err != nil {
+		t.Fatalf("CopyObject failed: %v", err)
+	}
+
+	// Verify copied content
+	reader3, info3, err := store.GetObject(bucketName, key3)
+	if err != nil {
+		t.Fatalf("GetObject for file3 failed: %v", err)
+	}
+	defer reader3.Close()
+
+	data3, err := io.ReadAll(reader3)
+	if err != nil {
+		t.Fatalf("Failed to read file3: %v", err)
+	}
+
+	if !bytes.Equal(data3, content) {
+		t.Error("Content doesn't match for file3")
+	}
+
+	if info3.ETag != objInfo1.ETag {
+		t.Error("ETag should match for copied file")
+	}
+
+	// Still should have only 1 content file in .objects (all three files reference the same content)
+	// Refcounts are in BoltDB
+	fileCount = 0
+	err = filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			fileCount++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk .objects directory: %v", err)
+	}
+
+	if fileCount != 1 {
+		t.Errorf("Expected 1 content file in .objects after copy (still deduplicated), got %d", fileCount)
+	}
+}
+
+// TestContentAddressableStorageWithDifferentContent tests that different files get separate storage
+func TestContentAddressableStorageWithDifferentContent(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create first object
+	key1 := "file1.txt"
+	content1 := bytes.Repeat([]byte("content A"), 500) // ~4500 bytes - over threshold
+
+	objInfo1, err := store.PutObject(bucketName, key1, bytes.NewReader(content1), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject for file1 failed: %v", err)
+	}
+
+	// Create second object with DIFFERENT content
+	key2 := "file2.txt"
+	content2 := bytes.Repeat([]byte("content B"), 500) // ~4500 bytes - over threshold
+
+	objInfo2, err := store.PutObject(bucketName, key2, bytes.NewReader(content2), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject for file2 failed: %v", err)
+	}
+
+	// ETags should be different since content is different
+	if objInfo1.ETag == objInfo2.ETag {
+		t.Error("ETags should be different for different content")
+	}
+
+	// Verify both objects can be read back with correct content
+	reader1, _, err := store.GetObject(bucketName, key1)
+	if err != nil {
+		t.Fatalf("GetObject for file1 failed: %v", err)
+	}
+	defer reader1.Close()
+
+	data1, err := io.ReadAll(reader1)
+	if err != nil {
+		t.Fatalf("Failed to read file1: %v", err)
+	}
+
+	if !bytes.Equal(data1, content1) {
+		t.Error("Content doesn't match for file1")
+	}
+
+	reader2, _, err := store.GetObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("GetObject for file2 failed: %v", err)
+	}
+	defer reader2.Close()
+
+	data2, err := io.ReadAll(reader2)
+	if err != nil {
+		t.Fatalf("Failed to read file2: %v", err)
+	}
+
+	if !bytes.Equal(data2, content2) {
+		t.Error("Content doesn't match for file2")
+	}
+
+	// Count content files in .objects directory - should be 2 content files (different content)
+	// Refcounts are in BoltDB
+	objectsDir := store.objectsDir
+	fileCount := 0
+	err = filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			fileCount++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk .objects directory: %v", err)
+	}
+
+	if fileCount != 2 {
+		t.Errorf("Expected 2 content files in .objects (different content), got %d", fileCount)
+	}
+}
+
+// TestInlineDataNotInObjectsDirectory tests that small inline files are not stored in .objects
+func TestInlineDataNotInObjectsDirectory(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create small object that should be inlined
+	key := "small.txt"
+	content := []byte("small content")
+
+	_, err = store.PutObject(bucketName, key, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Verify object can be read back
+	reader, _, err := store.GetObject(bucketName, key)
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("Failed to read object: %v", err)
+	}
+
+	if !bytes.Equal(data, content) {
+		t.Error("Content doesn't match")
+	}
+
+	// .objects directory should be empty (no files, only directories)
+	objectsDir := store.objectsDir
+	fileCount := 0
+	err = filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			fileCount++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk .objects directory: %v", err)
+	}
+
+	if fileCount != 0 {
+		t.Errorf("Expected 0 files in .objects for inline data, got %d", fileCount)
+	}
+}
+
+// TestReferenceCountingCleanup tests that content-addressed objects are deleted when no longer referenced
+func TestReferenceCountingCleanup(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create content that will be deduplicated
+	content := bytes.Repeat([]byte("content for refcount"), 300) // ~6000 bytes
+
+	// Upload same content to 3 different keys
+	key1 := "ref1.txt"
+	key2 := "ref2.txt"
+	key3 := "ref3.txt"
+
+	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject key1 failed: %v", err)
+	}
+
+	_, err = store.PutObject(bucketName, key2, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject key2 failed: %v", err)
+	}
+
+	_, err = store.PutObject(bucketName, key3, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject key3 failed: %v", err)
+	}
+
+	// Count content files in .objects - should be 1
+	objectsDir := store.objectsDir
+	countContentFiles := func() int {
+		count := 0
+		filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				count++
+			}
+			return nil
+		})
+		return count
+	}
+
+	if countContentFiles() != 1 {
+		t.Errorf("Expected 1 content file after 3 uploads, got %d", countContentFiles())
+	}
+
+	// Delete first object - content should still exist
+	err = store.DeleteObject(bucketName, key1)
+	if err != nil {
+		t.Fatalf("DeleteObject key1 failed: %v", err)
+	}
+
+	if countContentFiles() != 1 {
+		t.Errorf("Expected 1 content file after deleting 1 of 3 references, got %d", countContentFiles())
+	}
+
+	// Verify key2 and key3 still work
+	reader, _, err := store.GetObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("GetObject key2 failed after deleting key1: %v", err)
+	}
+	reader.Close()
+
+	// Delete second object - content should still exist
+	err = store.DeleteObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("DeleteObject key2 failed: %v", err)
+	}
+
+	if countContentFiles() != 1 {
+		t.Errorf("Expected 1 content file after deleting 2 of 3 references, got %d", countContentFiles())
+	}
+
+	// Delete third object - content should now be deleted
+	err = store.DeleteObject(bucketName, key3)
+	if err != nil {
+		t.Fatalf("DeleteObject key3 failed: %v", err)
+	}
+
+	if countContentFiles() != 0 {
+		t.Errorf("Expected 0 content files after deleting all references, got %d", countContentFiles())
+	}
+}
+
+// TestReferenceCountingWithCopy tests reference counting with copy operations
+func TestReferenceCountingWithCopy(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bucketName := "test-bucket"
+	err = store.CreateBucket(bucketName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create content
+	content := bytes.Repeat([]byte("copy test content"), 300) // ~5100 bytes
+
+	// Upload original
+	key1 := "original.txt"
+	_, err = store.PutObject(bucketName, key1, bytes.NewReader(content), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Copy to another key
+	key2 := "copy.txt"
+	_, err = store.CopyObject(bucketName, key1, bucketName, key2)
+	if err != nil {
+		t.Fatalf("CopyObject failed: %v", err)
+	}
+
+	// Count content files - should be 1 (shared)
+	objectsDir := store.objectsDir
+	countContentFiles := func() int {
+		count := 0
+		filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				count++
+			}
+			return nil
+		})
+		return count
+	}
+
+	if countContentFiles() != 1 {
+		t.Errorf("Expected 1 content file after copy, got %d", countContentFiles())
+	}
+
+	// Delete original - copy should still work
+	err = store.DeleteObject(bucketName, key1)
+	if err != nil {
+		t.Fatalf("DeleteObject original failed: %v", err)
+	}
+
+	// Verify copy still works
+	reader, _, err := store.GetObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("GetObject copy failed after deleting original: %v", err)
+	}
+	data, _ := io.ReadAll(reader)
+	reader.Close()
+
+	if !bytes.Equal(data, content) {
+		t.Error("Copy content doesn't match after deleting original")
+	}
+
+	if countContentFiles() != 1 {
+		t.Errorf("Expected 1 content file after deleting original, got %d", countContentFiles())
+	}
+
+	// Delete copy - content should now be deleted
+	err = store.DeleteObject(bucketName, key2)
+	if err != nil {
+		t.Fatalf("DeleteObject copy failed: %v", err)
+	}
+
+	if countContentFiles() != 0 {
+		t.Errorf("Expected 0 content files after deleting all references, got %d", countContentFiles())
+	}
 }

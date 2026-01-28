@@ -17,7 +17,7 @@ func TestBucketOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 
 	// Create bucket
@@ -71,7 +71,7 @@ func TestBucketDuplicateCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	bucketName := "test-bucket"
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestBucketInvalidNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	invalidNames := []string{
 		"",
 		".",
@@ -124,7 +124,7 @@ func TestDeleteNonexistentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	defer store.Close()
 	err = store.DeleteBucket("nonexistent")
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
