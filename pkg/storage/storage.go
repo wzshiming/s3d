@@ -172,8 +172,9 @@ func (s *Storage) safePath(bucket, key string) (string, error) {
 
 // objectMetadata represents object metadata
 type objectMetadata struct {
-	ContentType string
-	ETag        string
+	Metadata Metadata
+
+	ETag string
 	// Data stores the file content inline for small files (<=4096 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
 	Data []byte
@@ -185,7 +186,28 @@ type objectMetadata struct {
 
 // uploadMetadata represents multipart upload metadata
 type uploadMetadata struct {
-	ContentType string
+	Metadata Metadata
+}
+
+func metadataEqual(a, b Metadata) bool {
+	if a.CacheControl != b.CacheControl {
+		return false
+	}
+	if a.ContentDisposition != b.ContentDisposition {
+		return false
+	}
+	if a.ContentType != b.ContentType {
+		return false
+	}
+	if len(a.XAmzMeta) != len(b.XAmzMeta) {
+		return false
+	}
+	for key, valA := range a.XAmzMeta {
+		if valB, ok := b.XAmzMeta[key]; !ok || valA != valB {
+			return false
+		}
+	}
+	return true
 }
 
 // saveObjectMetadata saves object metadata

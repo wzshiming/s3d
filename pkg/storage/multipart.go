@@ -20,7 +20,7 @@ func genUploadID() string {
 }
 
 // InitiateMultipartUpload initiates a multipart upload
-func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string) (string, error) {
+func (s *Storage) InitiateMultipartUpload(bucket, key string, userMetadata Metadata) (string, error) {
 	if !s.BucketExists(bucket) {
 		return "", ErrBucketNotFound
 	}
@@ -44,7 +44,7 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, contentType string
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata := &uploadMetadata{
-		ContentType: contentType,
+		Metadata: userMetadata,
 	}
 	if err := saveUploadMetadata(uploadMetaPath, metadata); err != nil {
 		return "", err
@@ -105,17 +105,13 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	// Load upload metadata for content type
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
-	contentType := "application/octet-stream"
-	if metadata != nil && metadata.ContentType != "" {
-		contentType = metadata.ContentType
-	}
 
 	return &ObjectInfo{
-		Key:         key,
-		Size:        partFileInfo.Size(),
-		ETag:        etag,
-		ModTime:     partFileInfo.ModTime(),
-		ContentType: contentType,
+		Key:      key,
+		Size:     partFileInfo.Size(),
+		ETag:     etag,
+		ModTime:  partFileInfo.ModTime(),
+		Metadata: metadata.Metadata,
 	}, nil
 }
 
@@ -209,17 +205,13 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	// Load upload metadata for content type
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
-	contentType := "application/octet-stream"
-	if metadata != nil && metadata.ContentType != "" {
-		contentType = metadata.ContentType
-	}
 
 	return &ObjectInfo{
-		Key:         key,
-		Size:        partFileInfo.Size(),
-		ETag:        etag,
-		ModTime:     partFileInfo.ModTime(),
-		ContentType: contentType,
+		Key:      key,
+		Size:     partFileInfo.Size(),
+		ETag:     etag,
+		ModTime:  partFileInfo.ModTime(),
+		Metadata: metadata.Metadata,
 	}, nil
 }
 
@@ -301,9 +293,9 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	// Create object metadata from upload metadata
 	meta := &objectMetadata{
-		ContentType: uploadMetadata.ContentType,
-		ETag:        etag,
-		Digest:      digest,
+		ETag:     etag,
+		Digest:   digest,
+		Metadata: uploadMetadata.Metadata,
 	}
 
 	// Store in content-addressable storage
@@ -326,11 +318,6 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	contentType := meta.ContentType
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
 	// Get the uploads base directory as the stop point
 	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
 
@@ -345,11 +332,11 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return &ObjectInfo{
-		Key:         key,
-		Size:        fileInfo.Size(),
-		ETag:        etag,
-		ModTime:     metaFileInfo.ModTime(),
-		ContentType: contentType,
+		Key:      key,
+		Size:     fileInfo.Size(),
+		ETag:     etag,
+		ModTime:  metaFileInfo.ModTime(),
+		Metadata: uploadMetadata.Metadata,
 	}, nil
 }
 

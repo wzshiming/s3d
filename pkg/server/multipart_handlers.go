@@ -18,7 +18,9 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 		contentType = "application/octet-stream"
 	}
 
-	uploadID, err := s.storage.InitiateMultipartUpload(bucket, key, contentType)
+	metadata := extractMetadata(r)
+
+	uploadID, err := s.storage.InitiateMultipartUpload(bucket, key, metadata)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
