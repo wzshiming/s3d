@@ -39,13 +39,14 @@ type ChunkedReader struct {
 	err             error
 	
 	// Signature validation fields
-	signingKey      []byte // derived signing key for signature validation
-	region          string
-	service         string
-	timestamp       string
-	prevSignature   string // previous chunk signature (seed signature for first chunk)
-	validateSig     bool   // whether to validate chunk signatures
-	currentChunkData []byte // buffer for current chunk data (for signature validation)
+	signingKey        []byte // derived signing key for signature validation
+	region            string
+	service           string
+	timestamp         string
+	prevSignature     string // previous chunk signature (seed signature for first chunk)
+	validateSig       bool   // whether to validate chunk signatures
+	currentChunkData  []byte // buffer for current chunk data (for signature validation)
+	pendingSignature  string // signature to validate after chunk data is read
 }
 
 // ChunkedReaderOption configures a ChunkedReader
@@ -53,7 +54,7 @@ type ChunkedReaderOption func(*ChunkedReader)
 
 // WithSignatureValidation enables chunk signature validation
 // Parameters:
-//   - signingKey: the derived signing key (from AWS4Authenticator.getSigningKey)
+//   - signingKey: the derived signing key (from AWS4Authenticator.GetSigningKey)
 //   - region: AWS region
 //   - service: AWS service (typically "s3")
 //   - timestamp: request timestamp (X-Amz-Date)
@@ -124,8 +125,16 @@ func (c *ChunkedReader) Read(p []byte) (n int, err error) {
 		return n, err
 	}
 
-	// If we've finished this chunk, consume the trailing \r\n
+	// If we've finished this chunk, consume the trailing \r\n and validate signature
 	if c.remaining == 0 {
+		// Validate signature for non-final chunks if enabled
+		if c.validateSig && c.pendingSignature != "" {
+			if err := c.validateChunkSignature(c.pendingSignature, c.currentChunkData); err != nil {
+				c.err = err
+				return n, err
+			}
+			c.pendingSignature = ""
+		}
 		if err := c.consumeCRLF(); err != nil {
 			c.err = err
 			return n, err
@@ -206,10 +215,7 @@ func (c *ChunkedReader) readChunkHeader() error {
 
 	// Store expected signature for validation after reading chunk data
 	if c.validateSig && chunkSignature != "" {
-		// For non-final chunks, we'll need to validate after reading all data
-		// Store the signature for later validation
-		// Note: Full validation would require buffering the chunk data
-		// which is done in the Read method
+		c.pendingSignature = chunkSignature
 	}
 
 	c.remaining = int(size)
