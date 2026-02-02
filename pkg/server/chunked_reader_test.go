@@ -169,22 +169,28 @@ func TestChunkedReader_BinaryData(t *testing.T) {
 
 func TestIsChunkedUpload(t *testing.T) {
 	tests := []struct {
-		header   string
-		expected bool
+		name            string
+		contentEncoding string
+		contentSha256   string
+		expected        bool
 	}{
-		{"STREAMING-AWS4-HMAC-SHA256-PAYLOAD", true},
-		{"STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER", true},
-		{"STREAMING-UNSIGNED-PAYLOAD-TRAILER", true},
-		{"UNSIGNED-PAYLOAD", false},
-		{"", false},
-		{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", false},
+		{"streaming sha256 payload", "", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD", true},
+		{"streaming sha256 payload trailer", "", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER", true},
+		{"streaming unsigned trailer", "", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", true},
+		{"unsigned payload", "", "UNSIGNED-PAYLOAD", false},
+		{"empty headers", "", "", false},
+		{"regular sha256", "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", false},
+		{"aws-chunked encoding", "aws-chunked", "", true},
+		{"aws-chunked with gzip", "aws-chunked,gzip", "", true},
+		{"gzip encoding only", "gzip", "", false},
+		{"aws-chunked with streaming sha256", "aws-chunked", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD", true},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.header, func(t *testing.T) {
-			result := IsChunkedUpload(tc.header)
+		t.Run(tc.name, func(t *testing.T) {
+			result := IsChunkedUpload(tc.contentEncoding, tc.contentSha256)
 			if result != tc.expected {
-				t.Errorf("IsChunkedUpload(%q) = %v, want %v", tc.header, result, tc.expected)
+				t.Errorf("IsChunkedUpload(%q, %q) = %v, want %v", tc.contentEncoding, tc.contentSha256, result, tc.expected)
 			}
 		})
 	}

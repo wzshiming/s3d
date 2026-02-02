@@ -55,9 +55,11 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 	}
 
 	// Check for AWS chunked upload encoding
+	// Detection is based on Content-Encoding: aws-chunked or x-amz-content-sha256: STREAMING-*
 	var body io.Reader = r.Body
+	contentEncoding := r.Header.Get("Content-Encoding")
 	contentSha256 := r.Header.Get("x-amz-content-sha256")
-	if IsChunkedUpload(contentSha256) {
+	if IsChunkedUpload(contentEncoding, contentSha256) {
 		body = NewChunkedReader(r.Body)
 	}
 
