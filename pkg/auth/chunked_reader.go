@@ -52,15 +52,23 @@ type ChunkedReader struct {
 // ChunkedReaderOption configures a ChunkedReader
 type ChunkedReaderOption func(*ChunkedReader)
 
-// WithSignatureValidation enables chunk signature validation
+// WithSignatureValidation enables chunk signature validation using the AWS4Authenticator.
 // Parameters:
-//   - signingKey: the derived signing key (from AWS4Authenticator.GetSigningKey)
-//   - region: AWS region
-//   - service: AWS service (typically "s3")
+//   - auth: the AWS4Authenticator to use for signature validation
+//   - accessKeyID: the access key ID from the request
+//   - date: date string (YYYYMMDD) from the credential scope
+//   - region: AWS region from the credential scope
+//   - service: AWS service from the credential scope (typically "s3")
 //   - timestamp: request timestamp (X-Amz-Date)
 //   - seedSignature: the signature from the initial request authorization header
-func WithSignatureValidation(signingKey []byte, region, service, timestamp, seedSignature string) ChunkedReaderOption {
+func WithSignatureValidation(auth *AWS4Authenticator, accessKeyID, date, region, service, timestamp, seedSignature string) ChunkedReaderOption {
 	return func(c *ChunkedReader) {
+		signingKey, err := auth.GetSigningKey(accessKeyID, date, region, service)
+		if err != nil {
+			// If we can't get the signing key, disable validation
+			// The error will be caught during chunk processing
+			return
+		}
 		c.signingKey = signingKey
 		c.region = region
 		c.service = service
