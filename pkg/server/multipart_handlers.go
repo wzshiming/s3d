@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -53,7 +54,14 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
-	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
+	// Check for AWS chunked upload encoding
+	var body io.Reader = r.Body
+	contentSha256 := r.Header.Get("x-amz-content-sha256")
+	if IsChunkedUpload(contentSha256) {
+		body = NewChunkedReader(r.Body)
+	}
+
+	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, body)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:

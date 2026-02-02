@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,7 +24,15 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	metadata := extractMetadata(r)
 
-	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata)
+	// Check for AWS chunked upload encoding
+	// AWS SDK uses this for streaming uploads where the content hash is calculated per-chunk
+	var body io.Reader = r.Body
+	contentSha256 := r.Header.Get("x-amz-content-sha256")
+	if IsChunkedUpload(contentSha256) {
+		body = NewChunkedReader(r.Body)
+	}
+
+	objInfo, err := s.storage.PutObject(bucket, key, body, metadata)
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
