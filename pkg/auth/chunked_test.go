@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -497,5 +498,136 @@ func TestGetSecretKey(t *testing.T) {
 	}
 	if auth.GetSecretKey("key3") != "" {
 		t.Error("expected empty string for unknown key")
+	}
+}
+
+func TestAuthMiddlewareChunkedUpload(t *testing.T) {
+	auth := NewAWS4Authenticator()
+	auth.AddCredentials("test-key", "test-secret")
+
+	// Create a test handler that reads the body
+	var receivedBody []byte
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		receivedBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("handler failed to read body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Create the middleware chain
+	handler := auth.AuthMiddleware(testHandler)
+
+	// Setup chunked body with valid signatures
+	secretKey := "test-secret"
+	date := "20230101"
+	region := "us-east-1"
+	service := "s3"
+	signingKey := CalculateSigningKey(secretKey, date, region, service)
+
+	credScope := date + "/" + region + "/" + service + "/aws4_request"
+	timestamp := "20230101T000000Z"
+
+	testData := []byte("Test data!")
+	chunkHash := sha256Hash(string(testData))
+
+	// We need a valid seed signature that matches the request
+	// For this test, we'll compute what the signature should be
+	seedSignature := "abc123" // This is the seed signature from the Authorization header
+
+	// Calculate chunk signature
+	chunkStringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256-PAYLOAD",
+		timestamp,
+		credScope,
+		seedSignature,
+		emptyStringSHA256,
+		chunkHash,
+	}, "\n")
+	chunkSig := hex.EncodeToString(hmacSHA256(signingKey, []byte(chunkStringToSign)))
+
+	// Calculate final chunk signature
+	finalStringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256-PAYLOAD",
+		timestamp,
+		credScope,
+		chunkSig,
+		emptyStringSHA256,
+		emptyStringSHA256,
+	}, "\n")
+	finalSig := hex.EncodeToString(hmacSHA256(signingKey, []byte(finalStringToSign)))
+
+	var buf bytes.Buffer
+	buf.WriteString("a;chunk-signature=" + chunkSig + "\r\n")
+	buf.Write(testData)
+	buf.WriteString("\r\n")
+	buf.WriteString("0;chunk-signature=" + finalSig + "\r\n")
+
+	// Create request with valid auth header
+	req := httptest.NewRequest("PUT", "/bucket/key", &buf)
+	req.Host = "example.amazonaws.com"
+	req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+	req.Header.Set("X-Amz-Date", timestamp)
+	req.Header.Set("X-Amz-Decoded-Content-Length", "10")
+
+	// Calculate a valid request signature for the seed
+	// For simplicity in test, we use the pre-calculated signature for this specific request
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length, Signature="+seedSignature)
+
+	// Record the response
+	rr := httptest.NewRecorder()
+
+	// Use the actual authenticate signature calculation to get the correct seed signature
+	expectedSig, _ := auth.calculateSignatureV4Header(req, secretKey, date, region, service, "host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length")
+
+	// Re-create the body with correct signatures using the real seed signature
+	chunkStringToSign = strings.Join([]string{
+		"AWS4-HMAC-SHA256-PAYLOAD",
+		timestamp,
+		credScope,
+		expectedSig,
+		emptyStringSHA256,
+		chunkHash,
+	}, "\n")
+	chunkSig = hex.EncodeToString(hmacSHA256(signingKey, []byte(chunkStringToSign)))
+
+	finalStringToSign = strings.Join([]string{
+		"AWS4-HMAC-SHA256-PAYLOAD",
+		timestamp,
+		credScope,
+		chunkSig,
+		emptyStringSHA256,
+		emptyStringSHA256,
+	}, "\n")
+	finalSig = hex.EncodeToString(hmacSHA256(signingKey, []byte(finalStringToSign)))
+
+	buf.Reset()
+	buf.WriteString("a;chunk-signature=" + chunkSig + "\r\n")
+	buf.Write(testData)
+	buf.WriteString("\r\n")
+	buf.WriteString("0;chunk-signature=" + finalSig + "\r\n")
+
+	// Create new request with correct signature
+	req = httptest.NewRequest("PUT", "/bucket/key", &buf)
+	req.Host = "example.amazonaws.com"
+	req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+	req.Header.Set("X-Amz-Date", timestamp)
+	req.Header.Set("X-Amz-Decoded-Content-Length", "10")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length, Signature="+expectedSig)
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Verify the response
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr.Code)
+	}
+
+	// Verify the body was correctly unwrapped
+	if !bytes.Equal(receivedBody, testData) {
+		t.Errorf("expected body %q, got %q", string(testData), string(receivedBody))
 	}
 }

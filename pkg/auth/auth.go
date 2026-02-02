@@ -74,6 +74,39 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			}
 			return
 		}
+
+		// Wrap chunked upload requests with signature-validating reader
+		if IsChunkedUpload(r) {
+			wrappedReq, wrapErr := a.WrapChunkedRequest(r)
+			if wrapErr != nil {
+				var authErr *AuthError
+				var errResp Error
+				if errors.As(wrapErr, &authErr) {
+					errResp = Error{
+						Code:    authErr.Code,
+						Message: authErr.Message,
+					}
+				} else {
+					errResp = Error{
+						Code:    "AccessDenied",
+						Message: "Access Denied",
+					}
+				}
+
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusForbidden)
+
+				if _, writeErr := w.Write([]byte(xml.Header)); writeErr != nil {
+					return
+				}
+				if encodeErr := xml.NewEncoder(w).Encode(errResp); encodeErr != nil {
+					return
+				}
+				return
+			}
+			r = wrappedReq
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
