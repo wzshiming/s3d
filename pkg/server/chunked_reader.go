@@ -104,11 +104,9 @@ func (c *ChunkedReader) readChunkHeader() error {
 		return err
 	}
 
-	// Trim the trailing \r\n
+	// Trim the trailing \r\n or just \n (for lenient parsing)
 	line = strings.TrimSuffix(line, "\r\n")
-	if line == "" {
-		line = strings.TrimSuffix(line, "\n")
-	}
+	line = strings.TrimSuffix(line, "\n")
 
 	// Parse size from the header
 	// Format can be: "size" or "size;chunk-signature=sig" or "size;extension=value"
@@ -124,7 +122,9 @@ func (c *ChunkedReader) readChunkHeader() error {
 		return ErrInvalidChunkFormat
 	}
 
-	// Check for unreasonable chunk sizes (16 MB max per chunk is reasonable)
+	// Check for unreasonable chunk sizes.
+	// AWS S3 does not specify a max chunk size, but typically uses 64KB-1MB chunks.
+	// We allow up to 16 MB per chunk to be generous while preventing memory exhaustion.
 	const maxChunkSize = 16 * 1024 * 1024
 	if size > maxChunkSize {
 		return ErrChunkTooLarge
