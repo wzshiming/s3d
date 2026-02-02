@@ -1,4 +1,4 @@
-package server
+package auth
 
 import (
 	"bytes"
@@ -219,5 +219,25 @@ func TestChunkedReader_MultipleExtensions(t *testing.T) {
 	expected := "hello"
 	if string(data) != expected {
 		t.Errorf("got %q, want %q", string(data), expected)
+	}
+}
+
+func TestGetSigningKey(t *testing.T) {
+	auth := NewAWS4Authenticator()
+	auth.AddCredentials("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+
+	// Test getting signing key for valid credentials
+	signingKey, err := auth.GetSigningKey("AKIAIOSFODNN7EXAMPLE", "20130524", "us-east-1", "s3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if signingKey == nil {
+		t.Fatal("expected signing key, got nil")
+	}
+
+	// Test getting signing key for invalid credentials
+	_, err = auth.GetSigningKey("INVALID_KEY", "20130524", "us-east-1", "s3")
+	if err == nil {
+		t.Fatal("expected error for invalid credentials")
 	}
 }

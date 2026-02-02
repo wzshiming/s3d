@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -59,8 +60,8 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 	var body io.Reader = r.Body
 	contentEncoding := r.Header.Get("Content-Encoding")
 	contentSha256 := r.Header.Get("x-amz-content-sha256")
-	if IsChunkedUpload(contentEncoding, contentSha256) {
-		body = NewChunkedReader(r.Body)
+	if auth.IsChunkedUpload(contentEncoding, contentSha256) {
+		body = auth.NewChunkedReader(r.Body)
 	}
 
 	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, body)
