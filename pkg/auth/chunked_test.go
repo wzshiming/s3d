@@ -534,11 +534,17 @@ func TestAuthMiddlewareChunkedUpload(t *testing.T) {
 	testData := []byte("Test data!")
 	chunkHash := sha256Hash(string(testData))
 
-	// We need a valid seed signature that matches the request
-	// For this test, we'll compute what the signature should be
-	seedSignature := "abc123" // This is the seed signature from the Authorization header
+	// First, create a temporary request to calculate the correct seed signature
+	tempReq := httptest.NewRequest("PUT", "/bucket/key", nil)
+	tempReq.Host = "example.amazonaws.com"
+	tempReq.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+	tempReq.Header.Set("X-Amz-Date", timestamp)
+	tempReq.Header.Set("X-Amz-Decoded-Content-Length", "10")
 
-	// Calculate chunk signature
+	// Calculate the correct seed signature for the request
+	seedSignature, _ := auth.calculateSignatureV4Header(tempReq, secretKey, date, region, service, "host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length")
+
+	// Calculate chunk signature using the seed signature
 	chunkStringToSign := strings.Join([]string{
 		"AWS4-HMAC-SHA256-PAYLOAD",
 		timestamp,
@@ -560,65 +566,22 @@ func TestAuthMiddlewareChunkedUpload(t *testing.T) {
 	}, "\n")
 	finalSig := hex.EncodeToString(hmacSHA256(signingKey, []byte(finalStringToSign)))
 
+	// Build the chunked body
 	var buf bytes.Buffer
 	buf.WriteString("a;chunk-signature=" + chunkSig + "\r\n")
 	buf.Write(testData)
 	buf.WriteString("\r\n")
 	buf.WriteString("0;chunk-signature=" + finalSig + "\r\n")
 
-	// Create request with valid auth header
+	// Create request with correct signature
 	req := httptest.NewRequest("PUT", "/bucket/key", &buf)
 	req.Host = "example.amazonaws.com"
 	req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
 	req.Header.Set("X-Amz-Date", timestamp)
 	req.Header.Set("X-Amz-Decoded-Content-Length", "10")
-
-	// Calculate a valid request signature for the seed
-	// For simplicity in test, we use the pre-calculated signature for this specific request
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length, Signature="+seedSignature)
 
-	// Record the response
 	rr := httptest.NewRecorder()
-
-	// Use the actual authenticate signature calculation to get the correct seed signature
-	expectedSig, _ := auth.calculateSignatureV4Header(req, secretKey, date, region, service, "host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length")
-
-	// Re-create the body with correct signatures using the real seed signature
-	chunkStringToSign = strings.Join([]string{
-		"AWS4-HMAC-SHA256-PAYLOAD",
-		timestamp,
-		credScope,
-		expectedSig,
-		emptyStringSHA256,
-		chunkHash,
-	}, "\n")
-	chunkSig = hex.EncodeToString(hmacSHA256(signingKey, []byte(chunkStringToSign)))
-
-	finalStringToSign = strings.Join([]string{
-		"AWS4-HMAC-SHA256-PAYLOAD",
-		timestamp,
-		credScope,
-		chunkSig,
-		emptyStringSHA256,
-		emptyStringSHA256,
-	}, "\n")
-	finalSig = hex.EncodeToString(hmacSHA256(signingKey, []byte(finalStringToSign)))
-
-	buf.Reset()
-	buf.WriteString("a;chunk-signature=" + chunkSig + "\r\n")
-	buf.Write(testData)
-	buf.WriteString("\r\n")
-	buf.WriteString("0;chunk-signature=" + finalSig + "\r\n")
-
-	// Create new request with correct signature
-	req = httptest.NewRequest("PUT", "/bucket/key", &buf)
-	req.Host = "example.amazonaws.com"
-	req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
-	req.Header.Set("X-Amz-Date", timestamp)
-	req.Header.Set("X-Amz-Decoded-Content-Length", "10")
-	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length, Signature="+expectedSig)
-
-	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
 	// Verify the response
