@@ -124,14 +124,13 @@ func (c *ChunkedReader) readChunkHeader() error {
 		return ErrInvalidChunkFormat
 	}
 
-	// Validate chunk-signature extension is present (required by AWS spec)
-	// We don't validate the actual signature value, but we ensure the format is correct
+	// Parse chunk-signature if present (AWS spec requires it for signed payloads)
+	// Note: We parse but don't validate the signature as validation requires
+	// the secret key which is available in the auth layer, not here
 	if len(parts) == 2 {
-		extension := parts[1]
-		if !strings.HasPrefix(extension, "chunk-signature=") {
-			// AWS chunked format requires chunk-signature extension
-			// Allow other extensions for flexibility, but log if unexpected
-		}
+		// Extension present, typically "chunk-signature=<sig>"
+		// We accept any extension format for flexibility
+		_ = parts[1]
 	}
 
 	size, err := strconv.ParseInt(sizeStr, 16, 64)
@@ -194,7 +193,6 @@ func (c *ChunkedReader) consumeTrailingHeaders() {
 // AWS chunked uploads are indicated by:
 // 1. Content-Encoding header containing "aws-chunked"
 // 2. x-amz-content-sha256 header starting with "STREAMING-"
-// 3. x-amz-decoded-content-length header present (indicates original content length)
 func IsChunkedUpload(contentEncoding, contentSha256 string) bool {
 	// Check for aws-chunked content encoding
 	if strings.Contains(contentEncoding, "aws-chunked") {
