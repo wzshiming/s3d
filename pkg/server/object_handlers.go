@@ -26,21 +26,16 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	metadata := extractMetadata(r)
 
-	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata)
+	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
-		return
-	}
-
-	// Validate checksum if provided
-	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != objInfo.ChecksumSHA256 {
-		// Delete the object since checksum doesn't match
-		s.storage.DeleteObject(bucket, key)
-		s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		return
 	}
 

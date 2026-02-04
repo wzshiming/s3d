@@ -38,7 +38,8 @@ func urlSafeToStdBase64(urlSafe string) string {
 }
 
 // PutObject stores an object
-func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata) (*ObjectInfo, error) {
+// If expectedChecksumSHA256 is provided (non-empty), it validates the checksum after computing.
+func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata, expectedChecksumSHA256 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -89,6 +90,12 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	}
 
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+	checksumSHA256 := urlSafeToStdBase64(etag)
+
+	// Validate checksum if provided
+	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
 
 	// Check compatibility: if object exists with same ETag, it's a duplicate write
 	// This is compatible and we can proceed without issue (S3 behavior)
