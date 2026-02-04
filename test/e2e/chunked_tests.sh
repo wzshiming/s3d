@@ -31,10 +31,10 @@ export TEST_SECRET_KEY="test-chunked-secret-key"
 cleanup_chunked() {
     echo -e "\n${YELLOW}Cleaning up chunked tests...${NC}"
     if [ -n "$CHUNKED_SERVER_PID" ]; then
-        kill -TERM $CHUNKED_SERVER_PID 2>/dev/null || true
+        kill -TERM "$CHUNKED_SERVER_PID" 2>/dev/null || true
         sleep 1
-        kill -KILL $CHUNKED_SERVER_PID 2>/dev/null || true
-        wait $CHUNKED_SERVER_PID 2>/dev/null || true
+        kill -KILL "$CHUNKED_SERVER_PID" 2>/dev/null || true
+        wait "$CHUNKED_SERVER_PID" 2>/dev/null || true
     fi
     rm -rf "${CHUNKED_TEST_DATA_DIR}"
     rm -rf "${CHUNKED_SERVER_DATA_DIR}"
