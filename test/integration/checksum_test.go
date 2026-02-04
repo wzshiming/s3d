@@ -184,6 +184,10 @@ func TestMultipartUploadChecksum(t *testing.T) {
 	part2Hash := sha256.Sum256([]byte(part2Content))
 	part2Checksum := base64.StdEncoding.EncodeToString(part2Hash[:])
 
+	// Calculate the final object checksum (combined content)
+	finalHash := sha256.Sum256([]byte(part1Content + part2Content))
+	finalChecksum := base64.StdEncoding.EncodeToString(finalHash[:])
+
 	// Create bucket
 	_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
@@ -242,15 +246,17 @@ func TestMultipartUploadChecksum(t *testing.T) {
 		}
 		t.Logf("Part 2 ChecksumSHA256: %s", *part2Output.ChecksumSHA256)
 
-		// Complete multipart upload with checksums
+		// Complete multipart upload with final checksum at top level
+		t.Logf("Expected final ChecksumSHA256: %s", finalChecksum)
 		completeOutput, err := ts.client.CompleteMultipartUpload(ts.ctx, &s3.CompleteMultipartUploadInput{
-			Bucket:   aws.String(bucketName),
-			Key:      aws.String(objectKey),
-			UploadId: uploadID,
+			Bucket:         aws.String(bucketName),
+			Key:            aws.String(objectKey),
+			UploadId:       uploadID,
+			ChecksumSHA256: aws.String(finalChecksum),
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: []types.CompletedPart{
-					{PartNumber: aws.Int32(1), ETag: part1Output.ETag, ChecksumSHA256: aws.String(part1Checksum)},
-					{PartNumber: aws.Int32(2), ETag: part2Output.ETag, ChecksumSHA256: aws.String(part2Checksum)},
+					{PartNumber: aws.Int32(1), ETag: part1Output.ETag},
+					{PartNumber: aws.Int32(2), ETag: part2Output.ETag},
 				},
 			},
 		})
@@ -345,15 +351,16 @@ func TestMultipartUploadChecksum(t *testing.T) {
 		}
 		t.Logf("Uploaded part with checksum: %s", *partOutput.ChecksumSHA256)
 
-		// Try to complete with wrong checksum
+		// Try to complete with wrong checksum at top level (for final object)
 		wrongChecksum := "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
 		_, err = ts.client.CompleteMultipartUpload(ts.ctx, &s3.CompleteMultipartUploadInput{
-			Bucket:   aws.String(bucketName),
-			Key:      aws.String("complete-mismatch.txt"),
-			UploadId: uploadID,
+			Bucket:         aws.String(bucketName),
+			Key:            aws.String("complete-mismatch.txt"),
+			UploadId:       uploadID,
+			ChecksumSHA256: aws.String(wrongChecksum),
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: []types.CompletedPart{
-					{PartNumber: aws.Int32(1), ETag: partOutput.ETag, ChecksumSHA256: aws.String(wrongChecksum)},
+					{PartNumber: aws.Int32(1), ETag: partOutput.ETag},
 				},
 			},
 		})
