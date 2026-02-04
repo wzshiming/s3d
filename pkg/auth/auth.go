@@ -74,6 +74,39 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			}
 			return
 		}
+
+		// Wrap chunked upload requests with signature-validating reader
+		if IsChunkedUpload(r) {
+			wrappedReq, wrapErr := a.WrapChunkedRequest(r)
+			if wrapErr != nil {
+				var authErr *AuthError
+				var errResp Error
+				if errors.As(wrapErr, &authErr) {
+					errResp = Error{
+						Code:    authErr.Code,
+						Message: authErr.Message,
+					}
+				} else {
+					errResp = Error{
+						Code:    "AccessDenied",
+						Message: "Access Denied",
+					}
+				}
+
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusForbidden)
+
+				if _, writeErr := w.Write([]byte(xml.Header)); writeErr != nil {
+					return
+				}
+				if encodeErr := xml.NewEncoder(w).Encode(errResp); encodeErr != nil {
+					return
+				}
+				return
+			}
+			r = wrappedReq
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -245,10 +278,7 @@ func (a *AWS4Authenticator) calculateSignatureV4Query(r *http.Request, secretAcc
 	}, "\n")
 
 	// Step 3: Calculate signature
-	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
-	dateRegionKey := hmacSHA256(dateKey, []byte(region))
-	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
-	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	signingKey := CalculateSigningKey(secretAccessKey, date, region, service)
 
 	signature := hmacSHA256(signingKey, []byte(stringToSign))
 
@@ -279,10 +309,7 @@ func (a *AWS4Authenticator) calculateSignatureV4Header(r *http.Request, secretAc
 	}, "\n")
 
 	// Step 3: Calculate signature
-	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
-	dateRegionKey := hmacSHA256(dateKey, []byte(region))
-	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
-	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	signingKey := CalculateSigningKey(secretAccessKey, date, region, service)
 
 	signature := hmacSHA256(signingKey, []byte(stringToSign))
 
@@ -394,4 +421,13 @@ func hmacSHA256(key, data []byte) []byte {
 // parseAmzDate parses AWS timestamp format (YYYYMMDDTHHMMSSZ)
 func parseAmzDate(timestamp string) (time.Time, error) {
 	return time.Parse("20060102T150405Z", timestamp)
+}
+
+// CalculateSigningKey derives the signing key from the secret access key
+func CalculateSigningKey(secretAccessKey, date, region, service string) []byte {
+	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
+	dateRegionKey := hmacSHA256(dateKey, []byte(region))
+	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
+	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	return signingKey
 }

@@ -68,8 +68,14 @@ echo -e "${YELLOW}Running authentication e2e tests...${NC}"
 echo -e "${YELLOW}========================================${NC}"
 "${SCRIPT_DIR}/auth_tests.sh"
 
+# Run chunked upload tests
+echo -e "\n${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Running chunked upload e2e tests...${NC}"
+echo -e "${YELLOW}========================================${NC}"
+"${SCRIPT_DIR}/chunked_tests.sh"
+
 echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}All e2e tests (including auth) passed!${NC}"
+echo -e "${GREEN}All e2e tests (including auth and chunked) passed!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 exit 0
