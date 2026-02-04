@@ -27,6 +27,7 @@ func (r *inlineDataReader) Close() error {
 // This is needed because we use URL-safe base64 (with - and _ characters) for ETags/filenames
 // to avoid path separator issues, but AWS SDK expects standard base64 (with + and / characters)
 // for checksum headers like x-amz-checksum-sha256.
+// Returns the standard base64 encoded string, or empty string if input is empty.
 func urlSafeToStdBase64(urlSafe string) string {
 	if urlSafe == "" {
 		return ""
