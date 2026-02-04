@@ -791,241 +791,241 @@ func TestDuplicateWriteCompatibility(t *testing.T) {
 // TestFolderObjects tests S3 folder object support via the S3 API
 // S3 folders are objects with keys ending with "/" and zero-length content
 func TestFolderObjects(t *testing.T) {
-bucketName := "test-folder-objects"
+	bucketName := "test-folder-objects"
 
-// Create bucket
-_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("Failed to create bucket: %v", err)
-}
-defer ts.client.DeleteBucket(ts.ctx, &s3.DeleteBucketInput{
-Bucket: aws.String(bucketName),
-})
+	// Create bucket
+	_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ts.ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
 
-t.Run("CreateFolderObject", func(t *testing.T) {
-folderKey := "myfolder/"
+	t.Run("CreateFolderObject", func(t *testing.T) {
+		folderKey := "myfolder/"
 
-// Create folder object with empty content
-_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(folderKey),
-Body:   strings.NewReader(""),
-})
-if err != nil {
-t.Fatalf("Failed to create folder object: %v", err)
-}
-})
+		// Create folder object with empty content
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(folderKey),
+			Body:   strings.NewReader(""),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create folder object: %v", err)
+		}
+	})
 
-t.Run("ListFolderObject", func(t *testing.T) {
-output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("Failed to list objects: %v", err)
-}
+	t.Run("ListFolderObject", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("Failed to list objects: %v", err)
+		}
 
-found := false
-for _, obj := range output.Contents {
-if *obj.Key == "myfolder/" {
-found = true
-if *obj.Size != 0 {
-t.Errorf("Folder object size should be 0, got %d", *obj.Size)
-}
-break
-}
-}
-if !found {
-t.Error("Folder object not found in list")
-}
-})
+		found := false
+		for _, obj := range output.Contents {
+			if *obj.Key == "myfolder/" {
+				found = true
+				if *obj.Size != 0 {
+					t.Errorf("Folder object size should be 0, got %d", *obj.Size)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("Folder object not found in list")
+		}
+	})
 
-t.Run("GetFolderObject", func(t *testing.T) {
-output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String("myfolder/"),
-})
-if err != nil {
-t.Fatalf("Failed to get folder object: %v", err)
-}
-defer output.Body.Close()
+	t.Run("GetFolderObject", func(t *testing.T) {
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("myfolder/"),
+		})
+		if err != nil {
+			t.Fatalf("Failed to get folder object: %v", err)
+		}
+		defer output.Body.Close()
 
-data, err := io.ReadAll(output.Body)
-if err != nil {
-t.Fatalf("Failed to read folder object: %v", err)
-}
+		data, err := io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read folder object: %v", err)
+		}
 
-if len(data) != 0 {
-t.Errorf("Folder object should have empty content, got %d bytes", len(data))
-}
-})
+		if len(data) != 0 {
+			t.Errorf("Folder object should have empty content, got %d bytes", len(data))
+		}
+	})
 
-t.Run("HeadFolderObject", func(t *testing.T) {
-output, err := ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String("myfolder/"),
-})
-if err != nil {
-t.Fatalf("Failed to head folder object: %v", err)
-}
+	t.Run("HeadFolderObject", func(t *testing.T) {
+		output, err := ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("myfolder/"),
+		})
+		if err != nil {
+			t.Fatalf("Failed to head folder object: %v", err)
+		}
 
-if *output.ContentLength != 0 {
-t.Errorf("Folder object content length should be 0, got %d", *output.ContentLength)
-}
-})
+		if *output.ContentLength != 0 {
+			t.Errorf("Folder object content length should be 0, got %d", *output.ContentLength)
+		}
+	})
 
-t.Run("FolderWithNestedObjects", func(t *testing.T) {
-nestedKey := "myfolder/file.txt"
-nestedContent := "Hello from nested file"
+	t.Run("FolderWithNestedObjects", func(t *testing.T) {
+		nestedKey := "myfolder/file.txt"
+		nestedContent := "Hello from nested file"
 
-// Create nested file inside folder
-_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(nestedKey),
-Body:   strings.NewReader(nestedContent),
-})
-if err != nil {
-t.Fatalf("Failed to create nested object: %v", err)
-}
+		// Create nested file inside folder
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(nestedKey),
+			Body:   strings.NewReader(nestedContent),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create nested object: %v", err)
+		}
 
-// List all objects - should find both folder and nested file
-output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
-Bucket: aws.String(bucketName),
-})
-if err != nil {
-t.Fatalf("Failed to list objects: %v", err)
-}
+		// List all objects - should find both folder and nested file
+		output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("Failed to list objects: %v", err)
+		}
 
-foundFolder := false
-foundNested := false
-for _, obj := range output.Contents {
-if *obj.Key == "myfolder/" {
-foundFolder = true
-}
-if *obj.Key == nestedKey {
-foundNested = true
-}
-}
-if !foundFolder {
-t.Error("Folder object not found")
-}
-if !foundNested {
-t.Error("Nested object not found")
-}
-})
+		foundFolder := false
+		foundNested := false
+		for _, obj := range output.Contents {
+			if *obj.Key == "myfolder/" {
+				foundFolder = true
+			}
+			if *obj.Key == nestedKey {
+				foundNested = true
+			}
+		}
+		if !foundFolder {
+			t.Error("Folder object not found")
+		}
+		if !foundNested {
+			t.Error("Nested object not found")
+		}
+	})
 
-t.Run("ListWithDelimiter", func(t *testing.T) {
-// Create a root-level file
-rootFile := "rootfile.txt"
-_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(rootFile),
-Body:   strings.NewReader("root content"),
-})
-if err != nil {
-t.Fatalf("Failed to create root file: %v", err)
-}
+	t.Run("ListWithDelimiter", func(t *testing.T) {
+		// Create a root-level file
+		rootFile := "rootfile.txt"
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(rootFile),
+			Body:   strings.NewReader("root content"),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create root file: %v", err)
+		}
 
-// List with delimiter "/" - should return root file and common prefix "myfolder/"
-output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
-Bucket:    aws.String(bucketName),
-Delimiter: aws.String("/"),
-})
-if err != nil {
-t.Fatalf("Failed to list objects with delimiter: %v", err)
-}
+		// List with delimiter "/" - should return root file and common prefix "myfolder/"
+		output, err := ts.client.ListObjectsV2(ts.ctx, &s3.ListObjectsV2Input{
+			Bucket:    aws.String(bucketName),
+			Delimiter: aws.String("/"),
+		})
+		if err != nil {
+			t.Fatalf("Failed to list objects with delimiter: %v", err)
+		}
 
-// Check that rootfile.txt is in the objects list
-foundRootFile := false
-for _, obj := range output.Contents {
-if *obj.Key == rootFile {
-foundRootFile = true
-}
-}
-if !foundRootFile {
-t.Error("Root file not found in objects list")
-}
+		// Check that rootfile.txt is in the objects list
+		foundRootFile := false
+		for _, obj := range output.Contents {
+			if *obj.Key == rootFile {
+				foundRootFile = true
+			}
+		}
+		if !foundRootFile {
+			t.Error("Root file not found in objects list")
+		}
 
-// Check that myfolder/ is in the common prefixes
-foundPrefix := false
-for _, p := range output.CommonPrefixes {
-if *p.Prefix == "myfolder/" {
-foundPrefix = true
-}
-}
-if !foundPrefix {
-t.Error("myfolder/ not found in common prefixes")
-}
-})
+		// Check that myfolder/ is in the common prefixes
+		foundPrefix := false
+		for _, p := range output.CommonPrefixes {
+			if *p.Prefix == "myfolder/" {
+				foundPrefix = true
+			}
+		}
+		if !foundPrefix {
+			t.Error("myfolder/ not found in common prefixes")
+		}
+	})
 
-t.Run("CopyFolderObject", func(t *testing.T) {
-srcFolder := "srcfolder/"
-dstFolder := "dstfolder/"
+	t.Run("CopyFolderObject", func(t *testing.T) {
+		srcFolder := "srcfolder/"
+		dstFolder := "dstfolder/"
 
-// Create source folder
-_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(srcFolder),
-Body:   strings.NewReader(""),
-})
-if err != nil {
-t.Fatalf("Failed to create source folder: %v", err)
-}
+		// Create source folder
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(srcFolder),
+			Body:   strings.NewReader(""),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create source folder: %v", err)
+		}
 
-// Copy folder
-_, err = ts.client.CopyObject(ts.ctx, &s3.CopyObjectInput{
-Bucket:     aws.String(bucketName),
-Key:        aws.String(dstFolder),
-CopySource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcFolder)),
-})
-if err != nil {
-t.Fatalf("Failed to copy folder object: %v", err)
-}
+		// Copy folder
+		_, err = ts.client.CopyObject(ts.ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(dstFolder),
+			CopySource: aws.String(fmt.Sprintf("%s/%s", bucketName, srcFolder)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to copy folder object: %v", err)
+		}
 
-// Verify destination folder exists
-output, err := ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(dstFolder),
-})
-if err != nil {
-t.Fatalf("Failed to head copied folder: %v", err)
-}
+		// Verify destination folder exists
+		output, err := ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstFolder),
+		})
+		if err != nil {
+			t.Fatalf("Failed to head copied folder: %v", err)
+		}
 
-if *output.ContentLength != 0 {
-t.Errorf("Copied folder should have 0 content length, got %d", *output.ContentLength)
-}
-})
+		if *output.ContentLength != 0 {
+			t.Errorf("Copied folder should have 0 content length, got %d", *output.ContentLength)
+		}
+	})
 
-t.Run("DeleteFolderObject", func(t *testing.T) {
-folderToDelete := "deletefolder/"
+	t.Run("DeleteFolderObject", func(t *testing.T) {
+		folderToDelete := "deletefolder/"
 
-// Create folder
-_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(folderToDelete),
-Body:   strings.NewReader(""),
-})
-if err != nil {
-t.Fatalf("Failed to create folder to delete: %v", err)
-}
+		// Create folder
+		_, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(folderToDelete),
+			Body:   strings.NewReader(""),
+		})
+		if err != nil {
+			t.Fatalf("Failed to create folder to delete: %v", err)
+		}
 
-// Delete folder
-_, err = ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(folderToDelete),
-})
-if err != nil {
-t.Fatalf("Failed to delete folder object: %v", err)
-}
+		// Delete folder
+		_, err = ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(folderToDelete),
+		})
+		if err != nil {
+			t.Fatalf("Failed to delete folder object: %v", err)
+		}
 
-// Verify deletion
-_, err = ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
-Bucket: aws.String(bucketName),
-Key:    aws.String(folderToDelete),
-})
-if err == nil {
-t.Error("Folder should have been deleted")
-}
-})
+		// Verify deletion
+		_, err = ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(folderToDelete),
+		})
+		if err == nil {
+			t.Error("Folder should have been deleted")
+		}
+	})
 }

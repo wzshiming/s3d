@@ -376,7 +376,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 
 			// Check if data is inline or in content-addressable storage
 			if len(metadata.Data) > 0 {
-				// Data is inline (non-empty)
+				// Data is inline
 				size = int64(len(metadata.Data))
 			} else if metadata.Digest != "" {
 				// Data is in content-addressable storage
