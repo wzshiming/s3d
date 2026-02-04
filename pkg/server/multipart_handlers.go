@@ -53,6 +53,9 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
 	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
 	if err != nil {
 		switch err {
@@ -65,6 +68,12 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
+		return
+	}
+
+	// Validate checksum if provided
+	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != objInfo.ChecksumSHA256 {
+		s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		return
 	}
 

@@ -272,6 +272,53 @@ test_put_object_with_precalculated_checksum_sha256() {
     fi
 }
 
+# Test: PutObject with mismatched checksum-sha256 should fail
+test_put_object_with_mismatched_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: PutObject with mismatched --checksum-sha256 should fail${NC}"
+    
+    # Create test file
+    echo "Hello, Checksum Mismatch Test!" > "${CHECKSUM_TEST_DATA_DIR}/mismatch-test.txt"
+    
+    # Use a wrong checksum (different from actual content)
+    WRONG_CHECKSUM="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    echo "  Using wrong checksum: $WRONG_CHECKSUM"
+    
+    # Attempt upload with wrong checksum - this should fail
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key mismatch-test.txt \
+        --body "${CHECKSUM_TEST_DATA_DIR}/mismatch-test.txt" \
+        --checksum-sha256 "${WRONG_CHECKSUM}" 2>&1)
+    
+    EXIT_CODE=$?
+    
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "${GREEN}✓ PutObject with mismatched checksum correctly rejected${NC}"
+        # Verify it's the right error (checksum mismatch, not other errors)
+        if echo "$OUTPUT" | grep -qi "checksum\|BadDigest\|InvalidDigest"; then
+            echo -e "${GREEN}✓ Error message indicates checksum mismatch${NC}"
+        else
+            echo "  Error output: $OUTPUT"
+        fi
+    else
+        echo -e "${RED}✗ PutObject with mismatched checksum should have failed but succeeded${NC}"
+        echo "  Output: $OUTPUT"
+        exit 1
+    fi
+    
+    # Verify object was NOT created
+    HEAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api head-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key mismatch-test.txt 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${GREEN}✓ Object was not created (as expected)${NC}"
+    else
+        echo -e "${RED}✗ Object should not have been created but exists${NC}"
+        exit 1
+    fi
+}
+
 # Run all checksum tests
 run_checksum_tests() {
     setup
@@ -282,6 +329,7 @@ run_checksum_tests() {
     test_head_object_checksum
     test_large_file_checksum
     test_put_object_with_precalculated_checksum_sha256
+    test_put_object_with_mismatched_checksum_sha256
     
     cleanup_checksum_tests
     

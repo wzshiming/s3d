@@ -21,6 +21,9 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
 	metadata := extractMetadata(r)
 
 	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata)
@@ -30,6 +33,14 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		} else {
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
+		return
+	}
+
+	// Validate checksum if provided
+	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != objInfo.ChecksumSHA256 {
+		// Delete the object since checksum doesn't match
+		s.storage.DeleteObject(bucket, key)
+		s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		return
 	}
 
