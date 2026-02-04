@@ -109,7 +109,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	metadata := &objectMetadata{
 		ETag:     etag,
 		Metadata: userMetadata,
-		IsFolder: strings.HasSuffix(key, "/"),
+		IsDir:    strings.HasSuffix(key, "/"),
 	}
 
 	// If file is small enough, embed it in metadata
@@ -340,14 +340,14 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			}
 			objectKey = filepath.ToSlash(objectKey)
 
-			// Load metadata first to determine if this is a folder object
+			// Load metadata first to determine if this is a directory object
 			metadata, _ := loadObjectMetadata(path)
 			if metadata == nil {
 				return nil
 			}
 
-			// Reconstruct the original key with trailing slash for folder objects
-			if metadata.IsFolder {
+			// Reconstruct the original key with trailing slash for directory objects
+			if metadata.IsDir {
 				objectKey = objectKey + "/"
 			}
 
@@ -526,7 +526,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:     srcMetadata.ETag,
 			Data:     make([]byte, len(srcMetadata.Data)),
 			Metadata: srcMetadata.Metadata,
-			IsFolder: strings.HasSuffix(dstKey, "/"),
+			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
 
@@ -565,7 +565,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:     srcMetadata.ETag,
 			Digest:   srcMetadata.Digest,
 			Metadata: srcMetadata.Metadata,
-			IsFolder: strings.HasSuffix(dstKey, "/"),
+			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 
 		if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
@@ -610,7 +610,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	dstMetadata := &objectMetadata{
 		ETag:     srcMetadata.ETag,
 		Metadata: srcMetadata.Metadata,
-		IsFolder: strings.HasSuffix(dstKey, "/"),
+		IsDir:    strings.HasSuffix(dstKey, "/"),
 	}
 
 	if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
