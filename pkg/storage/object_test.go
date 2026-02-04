@@ -1441,3 +1441,265 @@ func TestReferenceCountingWithCopy(t *testing.T) {
 		t.Errorf("Expected 0 content files after deleting all references, got %d", countContentFiles())
 	}
 }
+
+// TestFolderObjects tests S3 folder object support
+// S3 folders are stored as objects with keys ending with "/" and typically have zero-length content
+func TestFolderObjects(t *testing.T) {
+tmpDir, err := os.MkdirTemp("", "folder-test-*")
+if err != nil {
+t.Fatalf("Failed to create temp dir: %v", err)
+}
+defer os.RemoveAll(tmpDir)
+
+store, err := NewStorage(tmpDir)
+if err != nil {
+t.Fatalf("Failed to create storage: %v", err)
+}
+defer store.Close()
+
+bucketName := "test-bucket"
+err = store.CreateBucket(bucketName)
+if err != nil {
+t.Fatalf("CreateBucket failed: %v", err)
+}
+
+t.Run("CreateAndListFolderObject", func(t *testing.T) {
+folderKey := "myfolder/"
+
+// Create folder object (zero-byte content)
+objInfo, err := store.PutObject(bucketName, folderKey, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject folder failed: %v", err)
+}
+
+if objInfo.Key != folderKey {
+t.Errorf("Expected key %q, got %q", folderKey, objInfo.Key)
+}
+if objInfo.Size != 0 {
+t.Errorf("Expected size 0, got %d", objInfo.Size)
+}
+
+// List objects - folder should be included
+objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
+if err != nil {
+t.Fatalf("ListObjects failed: %v", err)
+}
+
+found := false
+for _, obj := range objects {
+if obj.Key == folderKey {
+found = true
+if obj.Size != 0 {
+t.Errorf("Folder object size should be 0, got %d", obj.Size)
+}
+break
+}
+}
+if !found {
+t.Errorf("Folder object %s not found in list", folderKey)
+}
+})
+
+t.Run("GetFolderObject", func(t *testing.T) {
+folderKey := "getfolder/"
+
+// Create folder object
+_, err := store.PutObject(bucketName, folderKey, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject folder failed: %v", err)
+}
+
+// Get folder object
+reader, info, err := store.GetObject(bucketName, folderKey)
+if err != nil {
+t.Fatalf("GetObject folder failed: %v", err)
+}
+defer reader.Close()
+
+if info.Key != folderKey {
+t.Errorf("Expected key %q, got %q", folderKey, info.Key)
+}
+if info.Size != 0 {
+t.Errorf("Expected size 0, got %d", info.Size)
+}
+
+// Read content - should be empty
+data, err := io.ReadAll(reader)
+if err != nil {
+t.Fatalf("ReadAll failed: %v", err)
+}
+if len(data) != 0 {
+t.Errorf("Expected empty content, got %d bytes", len(data))
+}
+})
+
+t.Run("DeleteFolderObject", func(t *testing.T) {
+folderKey := "deletefolder/"
+
+// Create folder object
+_, err := store.PutObject(bucketName, folderKey, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject folder failed: %v", err)
+}
+
+// Delete folder object
+err = store.DeleteObject(bucketName, folderKey)
+if err != nil {
+t.Fatalf("DeleteObject folder failed: %v", err)
+}
+
+// Verify deletion
+_, _, err = store.GetObject(bucketName, folderKey)
+if err != ErrObjectNotFound {
+t.Errorf("Expected ErrObjectNotFound, got %v", err)
+}
+})
+
+t.Run("CopyFolderObject", func(t *testing.T) {
+srcFolder := "srcfolder/"
+dstFolder := "dstfolder/"
+
+// Create source folder object
+_, err := store.PutObject(bucketName, srcFolder, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject source folder failed: %v", err)
+}
+
+// Copy folder object
+copyInfo, err := store.CopyObject(bucketName, srcFolder, bucketName, dstFolder)
+if err != nil {
+t.Fatalf("CopyObject folder failed: %v", err)
+}
+
+if copyInfo.Key != dstFolder {
+t.Errorf("Expected key %q, got %q", dstFolder, copyInfo.Key)
+}
+if copyInfo.Size != 0 {
+t.Errorf("Expected size 0, got %d", copyInfo.Size)
+}
+
+// Verify destination exists
+_, info, err := store.GetObject(bucketName, dstFolder)
+if err != nil {
+t.Fatalf("GetObject destination folder failed: %v", err)
+}
+if info.Key != dstFolder {
+t.Errorf("Expected key %q, got %q", dstFolder, info.Key)
+}
+})
+
+t.Run("FolderWithNestedObjects", func(t *testing.T) {
+folderKey := "parentfolder/"
+nestedKey := "parentfolder/file.txt"
+nestedContent := "Hello from nested file"
+
+// Create folder object
+_, err := store.PutObject(bucketName, folderKey, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject folder failed: %v", err)
+}
+
+// Create nested object inside folder
+_, err = store.PutObject(bucketName, nestedKey, bytes.NewReader([]byte(nestedContent)), Metadata{})
+if err != nil {
+t.Fatalf("PutObject nested file failed: %v", err)
+}
+
+// List all objects - should find both
+objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
+if err != nil {
+t.Fatalf("ListObjects failed: %v", err)
+}
+
+foundFolder := false
+foundNested := false
+for _, obj := range objects {
+if obj.Key == folderKey {
+foundFolder = true
+}
+if obj.Key == nestedKey {
+foundNested = true
+}
+}
+if !foundFolder {
+t.Error("Folder object not found")
+}
+if !foundNested {
+t.Error("Nested object not found")
+}
+
+// List with prefix - should find folder and nested
+objects, _, err = store.ListObjects(bucketName, "parentfolder/", "", "", 0)
+if err != nil {
+t.Fatalf("ListObjects with prefix failed: %v", err)
+}
+
+foundFolder = false
+foundNested = false
+for _, obj := range objects {
+if obj.Key == folderKey {
+foundFolder = true
+}
+if obj.Key == nestedKey {
+foundNested = true
+}
+}
+if !foundFolder {
+t.Error("Folder object not found with prefix filter")
+}
+if !foundNested {
+t.Error("Nested object not found with prefix filter")
+}
+})
+
+t.Run("ListWithDelimiterAndFolderObjects", func(t *testing.T) {
+// Create a root-level folder object
+rootFolder := "rootfolder/"
+_, err := store.PutObject(bucketName, rootFolder, bytes.NewReader([]byte{}), Metadata{})
+if err != nil {
+t.Fatalf("PutObject root folder failed: %v", err)
+}
+
+// Create a root-level file
+rootFile := "rootfile.txt"
+_, err = store.PutObject(bucketName, rootFile, bytes.NewReader([]byte("root content")), Metadata{})
+if err != nil {
+t.Fatalf("PutObject root file failed: %v", err)
+}
+
+// Create a file inside rootfolder
+nestedFile := "rootfolder/nested.txt"
+_, err = store.PutObject(bucketName, nestedFile, bytes.NewReader([]byte("nested content")), Metadata{})
+if err != nil {
+t.Fatalf("PutObject nested file failed: %v", err)
+}
+
+// List with delimiter "/" - should return rootfile.txt and common prefix "rootfolder/"
+objects, prefixes, err := store.ListObjects(bucketName, "", "/", "", 0)
+if err != nil {
+t.Fatalf("ListObjects with delimiter failed: %v", err)
+}
+
+// Check that rootfile.txt is in the objects list
+foundRootFile := false
+for _, obj := range objects {
+if obj.Key == rootFile {
+foundRootFile = true
+}
+}
+if !foundRootFile {
+t.Error("Root file not found in objects list")
+}
+
+// Check that rootfolder/ is in the prefixes list
+foundPrefix := false
+for _, p := range prefixes {
+if p == "rootfolder/" {
+foundPrefix = true
+}
+}
+if !foundPrefix {
+t.Error("rootfolder/ not found in common prefixes")
+}
+})
+}
