@@ -27,7 +27,7 @@ const streamingPayloadHash = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
 // aws4ChunkedEncoding is the content encoding value for AWS chunked uploads
 const aws4ChunkedEncoding = "aws-chunked"
 
-// ChunkSignaturePrefix is the prefix for chunk signatures
+// chunkSignaturePrefix is the prefix for chunk signatures
 const chunkSignaturePrefix = "chunk-signature="
 
 // emptyStringSHA256 is the SHA256 hash of an empty string
