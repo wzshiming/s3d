@@ -457,7 +457,9 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 }
 
 // CopyObject copies an object from one location to another
-func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*ObjectInfo, error) {
+// If replaceMetadata is provided (non-nil), it replaces the source object's metadata.
+// If replaceMetadata is nil, the source object's metadata is copied.
+func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replaceMetadata *Metadata) (*ObjectInfo, error) {
 	// Verify source bucket exists
 	if !s.BucketExists(srcBucket) {
 		return nil, ErrBucketNotFound
@@ -485,6 +487,14 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		return nil, ErrObjectNotFound
 	}
 
+	// Determine which metadata to use
+	var metadataToUse Metadata
+	if replaceMetadata != nil {
+		metadataToUse = *replaceMetadata
+	} else {
+		metadataToUse = srcMetadata.Metadata
+	}
+
 	// Get destination object directory
 	dstObjectDir, err := s.safePath(dstBucket, dstKey)
 	if err != nil {
@@ -508,9 +518,9 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 	}
 
-	// Check compatibility: if destination exists with same ETag as source, it's a duplicate
+	// Check compatibility: if destination exists with same ETag as source and same metadata, it's a duplicate
 	// This is compatible and we can skip the copy operation
-	if existingDstMetadata != nil && existingDstMetadata.ETag == srcMetadata.ETag {
+	if existingDstMetadata != nil && existingDstMetadata.ETag == srcMetadata.ETag && metadataEqual(existingDstMetadata.Metadata, metadataToUse) {
 		// Same content already at destination - compatible duplicate, skip copy
 		// Get size from existing destination
 		var size int64
@@ -553,7 +563,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		dstMetadata := &objectMetadata{
 			ETag:     srcMetadata.ETag,
 			Data:     make([]byte, len(srcMetadata.Data)),
-			Metadata: srcMetadata.Metadata,
+			Metadata: metadataToUse,
 			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
@@ -579,7 +589,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:           srcMetadata.ETag,
 			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
 			ModTime:        metaFileInfo.ModTime(),
-			Metadata:       srcMetadata.Metadata,
+			Metadata:       metadataToUse,
 		}, nil
 	}
 
@@ -593,7 +603,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		dstMetadata := &objectMetadata{
 			ETag:     srcMetadata.ETag,
 			Digest:   srcMetadata.Digest,
-			Metadata: srcMetadata.Metadata,
+			Metadata: metadataToUse,
 			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 
@@ -632,14 +642,14 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:           srcMetadata.ETag,
 			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
 			ModTime:        metaFileInfo.ModTime(),
-			Metadata:       srcMetadata.Metadata,
+			Metadata:       metadataToUse,
 		}, nil
 	}
 
 	// Zero-byte object (no digest and no inline data)
 	dstMetadata := &objectMetadata{
 		ETag:     srcMetadata.ETag,
-		Metadata: srcMetadata.Metadata,
+		Metadata: metadataToUse,
 		IsDir:    strings.HasSuffix(dstKey, "/"),
 	}
 
@@ -664,7 +674,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		ETag:           srcMetadata.ETag,
 		ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
 		ModTime:        metaFileInfo.ModTime(),
-		Metadata:       srcMetadata.Metadata,
+		Metadata:       metadataToUse,
 	}, nil
 }
 

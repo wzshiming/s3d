@@ -124,7 +124,9 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 }
 
 // UploadPartCopy uploads a part of a multipart upload by copying from an existing object
-func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, srcBucket, srcKey string) (*ObjectInfo, error) {
+// If startByte and endByte are both >= 0, only the specified byte range is copied.
+// If startByte is < 0, the entire source object is copied.
+func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, srcBucket, srcKey string, startByte, endByte int64) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -161,6 +163,33 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		return nil, ErrObjectNotFound
 	}
 
+	// Determine source data size
+	var srcSize int64
+	if len(srcMetadata.Data) > 0 {
+		srcSize = int64(len(srcMetadata.Data))
+	} else if srcMetadata.Digest != "" {
+		objPath, err := s.objectPath(srcMetadata.Digest)
+		if err != nil {
+			return nil, err
+		}
+		srcFileInfo, err := os.Stat(objPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, ErrObjectNotFound
+			}
+			return nil, err
+		}
+		srcSize = srcFileInfo.Size()
+	}
+
+	// Validate byte range if specified
+	hasRange := startByte >= 0
+	if hasRange {
+		if startByte > endByte || startByte >= srcSize || endByte >= srcSize {
+			return nil, ErrInvalidRange
+		}
+	}
+
 	// Create temp file
 	tmpFile, err := s.tempFile()
 	if err != nil {
@@ -175,7 +204,11 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	// Copy data from source (either inline or digest)
 	if len(srcMetadata.Data) > 0 {
 		// Data is inline
-		_, err = writer.Write(srcMetadata.Data)
+		if hasRange {
+			_, err = writer.Write(srcMetadata.Data[startByte : endByte+1])
+		} else {
+			_, err = writer.Write(srcMetadata.Data)
+		}
 	} else if srcMetadata.Digest != "" {
 		// Data is in content-addressable storage
 		srcFile, err := s.getContentAddressedObject(srcMetadata.Digest)
@@ -186,7 +219,16 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 			return nil, err
 		}
 		defer srcFile.Close()
-		_, err = io.Copy(writer, srcFile)
+
+		if hasRange {
+			// Seek to start position and copy only the range
+			if _, err := srcFile.Seek(startByte, io.SeekStart); err != nil {
+				return nil, err
+			}
+			_, err = io.CopyN(writer, srcFile, endByte-startByte+1)
+		} else {
+			_, err = io.Copy(writer, srcFile)
+		}
 	}
 
 	if err != nil {

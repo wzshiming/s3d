@@ -11,6 +11,8 @@ source "${SCRIPT_DIR}/object_tests.sh"
 source "${SCRIPT_DIR}/advanced_tests.sh"
 source "${SCRIPT_DIR}/duplicate_write_tests.sh"
 source "${SCRIPT_DIR}/folder_tests.sh"
+source "${SCRIPT_DIR}/s3fs_tests.sh"
+source "${SCRIPT_DIR}/s3fs_mount_tests.sh"
 
 # Run setup
 setup
@@ -49,6 +51,12 @@ run_folder_tests
 test_multipart_upload
 test_sync_directory
 test_upload_part_copy
+
+# Run s3fs-fuse compatibility tests
+test_s3fs_directory_support
+
+# Run s3fs-fuse binary mount tests (will skip if s3fs not available or FUSE not supported)
+test_s3fs_binary_mount
 
 # Cleanup objects
 test_remove_all_objects
