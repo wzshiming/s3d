@@ -242,15 +242,15 @@ func TestMultipartUploadChecksum(t *testing.T) {
 		}
 		t.Logf("Part 2 ChecksumSHA256: %s", *part2Output.ChecksumSHA256)
 
-		// Complete multipart upload
+		// Complete multipart upload with checksums
 		completeOutput, err := ts.client.CompleteMultipartUpload(ts.ctx, &s3.CompleteMultipartUploadInput{
 			Bucket:   aws.String(bucketName),
 			Key:      aws.String(objectKey),
 			UploadId: uploadID,
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: []types.CompletedPart{
-					{PartNumber: aws.Int32(1), ETag: part1Output.ETag},
-					{PartNumber: aws.Int32(2), ETag: part2Output.ETag},
+					{PartNumber: aws.Int32(1), ETag: part1Output.ETag, ChecksumSHA256: aws.String(part1Checksum)},
+					{PartNumber: aws.Int32(2), ETag: part2Output.ETag, ChecksumSHA256: aws.String(part2Checksum)},
 				},
 			},
 		})
@@ -311,6 +311,67 @@ func TestMultipartUploadChecksum(t *testing.T) {
 		ts.client.AbortMultipartUpload(ts.ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   aws.String(bucketName),
 			Key:      aws.String("mismatch-multipart.txt"),
+			UploadId: uploadID,
+		})
+	})
+
+	// Test: CompleteMultipartUpload with mismatched checksum should fail
+	t.Run("CompleteMultipartUploadWithMismatchedChecksum", func(t *testing.T) {
+		// Initiate multipart upload
+		createOutput, err := ts.client.CreateMultipartUpload(ts.ctx, &s3.CreateMultipartUploadInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("complete-mismatch.txt"),
+		})
+		if err != nil {
+			t.Fatalf("CreateMultipartUpload failed: %v", err)
+		}
+		uploadID := createOutput.UploadId
+
+		// Upload a valid part
+		partContent := "Valid part content"
+		partHash := sha256.Sum256([]byte(partContent))
+		partChecksum := base64.StdEncoding.EncodeToString(partHash[:])
+
+		partOutput, err := ts.client.UploadPart(ts.ctx, &s3.UploadPartInput{
+			Bucket:         aws.String(bucketName),
+			Key:            aws.String("complete-mismatch.txt"),
+			UploadId:       uploadID,
+			PartNumber:     aws.Int32(1),
+			Body:           strings.NewReader(partContent),
+			ChecksumSHA256: aws.String(partChecksum),
+		})
+		if err != nil {
+			t.Fatalf("UploadPart failed: %v", err)
+		}
+		t.Logf("Uploaded part with checksum: %s", *partOutput.ChecksumSHA256)
+
+		// Try to complete with wrong checksum
+		wrongChecksum := "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
+		_, err = ts.client.CompleteMultipartUpload(ts.ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String("complete-mismatch.txt"),
+			UploadId: uploadID,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{PartNumber: aws.Int32(1), ETag: partOutput.ETag, ChecksumSHA256: aws.String(wrongChecksum)},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("Expected CompleteMultipartUpload with mismatched checksum to fail")
+			// Cleanup if it unexpectedly succeeded
+			ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String("complete-mismatch.txt"),
+			})
+		} else {
+			t.Logf("CompleteMultipartUpload with mismatched checksum correctly rejected: %v", err)
+		}
+
+		// Cleanup - abort the multipart upload
+		ts.client.AbortMultipartUpload(ts.ctx, &s3.AbortMultipartUploadInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String("complete-mismatch.txt"),
 			UploadId: uploadID,
 		})
 	})

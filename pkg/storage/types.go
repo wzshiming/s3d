@@ -27,8 +27,9 @@ type BucketInfo struct {
 
 // Multipart represents a part of a multipart upload
 type Multipart struct {
-	PartNumber int
-	ETag       string
+	PartNumber     int
+	ETag           string
+	ChecksumSHA256 string
 }
 
 // Part represents a stored part of list parts

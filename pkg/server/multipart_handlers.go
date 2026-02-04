@@ -151,8 +151,9 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		}
 
 		parts = append(parts, storage.Multipart{
-			PartNumber: p.PartNumber,
-			ETag:       p.ETag,
+			PartNumber:     p.PartNumber,
+			ETag:           p.ETag,
+			ChecksumSHA256: p.ChecksumSHA256,
 		})
 	}
 

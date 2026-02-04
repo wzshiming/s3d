@@ -262,6 +262,15 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		// Strip quotes from ETag if present (client may send quoted ETags)
 		etag := strings.Trim(part.ETag, `"`)
 
+		// Validate part checksum if provided
+		if part.ChecksumSHA256 != "" {
+			expectedPartChecksum := urlSafeToStdBase64(etag)
+			if part.ChecksumSHA256 != expectedPartChecksum {
+				tmpFile.Close()
+				return nil, ErrChecksumMismatch
+			}
+		}
+
 		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, etag))
 		partFile, err := os.Open(partPath)
 		if err != nil {
