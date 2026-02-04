@@ -35,7 +35,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -57,7 +57,7 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
+	w.Header().Set("x-amz-checksum-sha256", info.ChecksumSHA256)
 	setMetadataHeaders(w, info.Metadata)
 
 	http.ServeContent(w, r, key, info.ModTime, reader)

@@ -107,11 +107,12 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     partFileInfo.Size(),
-		ETag:     etag,
-		ModTime:  partFileInfo.ModTime(),
-		Metadata: metadata.Metadata,
+		Key:            key,
+		Size:           partFileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        partFileInfo.ModTime(),
+		Metadata:       metadata.Metadata,
 	}, nil
 }
 
@@ -207,11 +208,12 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     partFileInfo.Size(),
-		ETag:     etag,
-		ModTime:  partFileInfo.ModTime(),
-		Metadata: metadata.Metadata,
+		Key:            key,
+		Size:           partFileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        partFileInfo.ModTime(),
+		Metadata:       metadata.Metadata,
 	}, nil
 }
 
@@ -332,11 +334,12 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     fileInfo.Size(),
-		ETag:     etag,
-		ModTime:  metaFileInfo.ModTime(),
-		Metadata: uploadMetadata.Metadata,
+		Key:            key,
+		Size:           fileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        metaFileInfo.ModTime(),
+		Metadata:       uploadMetadata.Metadata,
 	}, nil
 }
 

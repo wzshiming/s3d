@@ -70,7 +70,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -165,10 +165,11 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 	}
 
 	result := CompleteMultipartUploadResult{
-		Location: fmt.Sprintf("/%s/%s", bucket, key),
-		Bucket:   bucket,
-		Key:      key,
-		ETag:     fmt.Sprintf("%q", objInfo.ETag),
+		Location:       fmt.Sprintf("/%s/%s", bucket, key),
+		Bucket:         bucket,
+		Key:            key,
+		ETag:           fmt.Sprintf("%q", objInfo.ETag),
+		ChecksumSHA256: objInfo.ChecksumSHA256,
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)

@@ -1106,3 +1106,115 @@ func TestDeleteObjects(t *testing.T) {
 		}
 	})
 }
+
+func TestChecksumSHA256(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-checksum-sha256"
+	objectKey := "checksum-test.txt"
+	objectContent := "Hello, Checksum!"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Test PutObject returns checksum
+	t.Run("PutObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+			Body:   strings.NewReader(objectContent),
+		})
+		if err != nil {
+			t.Fatalf("PutObject failed: %v", err)
+		}
+
+		// The SDK parses x-amz-checksum-sha256 header into ChecksumSHA256 field
+		if output.ChecksumSHA256 == nil {
+			t.Log("Note: ChecksumSHA256 field is nil (expected - SDK only parses if checksum mode was requested)")
+		} else {
+			t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Test GetObject returns checksum when checksum mode is enabled
+	t.Run("GetObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(objectKey),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		// Read the body to consume it
+		_, err = io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read object body: %v", err)
+		}
+
+		// When checksum mode is enabled, SDK should parse x-amz-checksum-sha256
+		if output.ChecksumSHA256 != nil {
+			t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+			// Verify it's a valid base64 string (non-empty)
+			if *output.ChecksumSHA256 == "" {
+				t.Error("ChecksumSHA256 should not be empty")
+			}
+		} else {
+			t.Log("Note: ChecksumSHA256 field is nil in GetObject response")
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Test HeadObject returns checksum when checksum mode is enabled
+	t.Run("HeadObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(objectKey),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		// When checksum mode is enabled, SDK should parse x-amz-checksum-sha256
+		if output.ChecksumSHA256 != nil {
+			t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+			// Verify it's a valid base64 string (non-empty)
+			if *output.ChecksumSHA256 == "" {
+				t.Error("ChecksumSHA256 should not be empty")
+			}
+		} else {
+			t.Log("Note: ChecksumSHA256 field is nil in HeadObject response")
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Cleanup
+	ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+}

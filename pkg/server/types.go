@@ -101,11 +101,12 @@ type CompleteMultipartUpload struct {
 
 // CompleteMultipartUploadResult is the response for CompleteMultipartUpload operation
 type CompleteMultipartUploadResult struct {
-	XMLName  xml.Name `xml:"CompleteMultipartUploadResult"`
-	Location string   `xml:"Location"`
-	Bucket   string   `xml:"Bucket"`
-	Key      string   `xml:"Key"`
-	ETag     string   `xml:"ETag"`
+	XMLName        xml.Name `xml:"CompleteMultipartUploadResult"`
+	Location       string   `xml:"Location"`
+	Bucket         string   `xml:"Bucket"`
+	Key            string   `xml:"Key"`
+	ETag           string   `xml:"ETag"`
+	ChecksumSHA256 string   `xml:"ChecksumSHA256,omitempty"`
 }
 
 // Upload represents an upload in ListMultipartUploads response

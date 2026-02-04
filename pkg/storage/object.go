@@ -23,6 +23,19 @@ func (r *inlineDataReader) Close() error {
 	return nil
 }
 
+// urlSafeToStdBase64 converts URL-safe base64 encoding to standard base64 encoding.
+// This is needed because we use URL-safe base64 (with - and _ characters) for ETags/filenames
+// to avoid path separator issues, but AWS SDK expects standard base64 (with + and / characters)
+// for checksum headers like x-amz-checksum-sha256.
+func urlSafeToStdBase64(urlSafe string) string {
+	if urlSafe == "" {
+		return ""
+	}
+	std := strings.ReplaceAll(urlSafe, "-", "+")
+	std = strings.ReplaceAll(std, "_", "/")
+	return std
+}
+
 // PutObject stores an object
 func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
@@ -98,11 +111,12 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		}
 
 		return &ObjectInfo{
-			Key:      key,
-			Size:     fileInfo.Size(),
-			ETag:     etag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: existingMetadata.Metadata,
+			Key:            key,
+			Size:           fileInfo.Size(),
+			ETag:           etag,
+			ChecksumSHA256: urlSafeToStdBase64(etag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       existingMetadata.Metadata,
 		}, nil
 	}
 
@@ -158,11 +172,12 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	}
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     fileInfo.Size(),
-		ETag:     etag,
-		ModTime:  metaFileInfo.ModTime(),
-		Metadata: userMetadata,
+		Key:            key,
+		Size:           fileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        metaFileInfo.ModTime(),
+		Metadata:       userMetadata,
 	}, nil
 }
 
@@ -200,11 +215,12 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		}
 
 		info := &ObjectInfo{
-			Key:      key,
-			Size:     int64(len(metadata.Data)),
-			ETag:     metadata.ETag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: metadata.Metadata,
+			Key:            key,
+			Size:           int64(len(metadata.Data)),
+			ETag:           metadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       metadata.Metadata,
 		}
 
 		return reader, info, nil
@@ -236,11 +252,12 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		}
 
 		info := &ObjectInfo{
-			Key:      key,
-			Size:     fileInfo.Size(),
-			ETag:     metadata.ETag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: metadata.Metadata,
+			Key:            key,
+			Size:           fileInfo.Size(),
+			ETag:           metadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       metadata.Metadata,
 		}
 
 		return file, info, nil
@@ -253,11 +270,12 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 	}
 
 	info := &ObjectInfo{
-		Key:      key,
-		Size:     0,
-		ETag:     metadata.ETag,
-		ModTime:  metaFileInfo.ModTime(),
-		Metadata: metadata.Metadata,
+		Key:            key,
+		Size:           0,
+		ETag:           metadata.ETag,
+		ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+		ModTime:        metaFileInfo.ModTime(),
+		Metadata:       metadata.Metadata,
 	}
 	return &inlineDataReader{bytes.NewReader([]byte{})}, info, nil
 }
@@ -394,11 +412,12 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 
 			// Always use meta file's ModTime
 			objects = append(objects, ObjectInfo{
-				Key:      objectKey,
-				Size:     size,
-				ETag:     metadata.ETag,
-				ModTime:  info.ModTime(),
-				Metadata: metadata.Metadata,
+				Key:            objectKey,
+				Size:           size,
+				ETag:           metadata.ETag,
+				ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+				ModTime:        info.ModTime(),
+				Metadata:       metadata.Metadata,
 			})
 		}
 
@@ -511,11 +530,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:      dstKey,
-			Size:     size,
-			ETag:     srcMetadata.ETag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: existingDstMetadata.Metadata,
+			Key:            dstKey,
+			Size:           size,
+			ETag:           srcMetadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       existingDstMetadata.Metadata,
 		}, nil
 	}
 
@@ -546,11 +566,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:      dstKey,
-			Size:     int64(len(srcMetadata.Data)),
-			ETag:     srcMetadata.ETag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: srcMetadata.Metadata,
+			Key:            dstKey,
+			Size:           int64(len(srcMetadata.Data)),
+			ETag:           srcMetadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       srcMetadata.Metadata,
 		}, nil
 	}
 
@@ -598,11 +619,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}
 
 		return &ObjectInfo{
-			Key:      dstKey,
-			Size:     fileInfo.Size(),
-			ETag:     srcMetadata.ETag,
-			ModTime:  metaFileInfo.ModTime(),
-			Metadata: srcMetadata.Metadata,
+			Key:            dstKey,
+			Size:           fileInfo.Size(),
+			ETag:           srcMetadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ModTime:        metaFileInfo.ModTime(),
+			Metadata:       srcMetadata.Metadata,
 		}, nil
 	}
 
@@ -629,11 +651,12 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 	}
 
 	return &ObjectInfo{
-		Key:      dstKey,
-		Size:     0,
-		ETag:     srcMetadata.ETag,
-		ModTime:  metaFileInfo.ModTime(),
-		Metadata: srcMetadata.Metadata,
+		Key:            dstKey,
+		Size:           0,
+		ETag:           srcMetadata.ETag,
+		ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+		ModTime:        metaFileInfo.ModTime(),
+		Metadata:       srcMetadata.Metadata,
 	}, nil
 }
 
