@@ -106,12 +106,12 @@ func TestIsChunkedUpload(t *testing.T) {
 	}{
 		{
 			name:          "streaming payload hash",
-			contentSha256: StreamingPayloadHash,
+			contentSha256: streamingPayloadHash,
 			expected:      true,
 		},
 		{
 			name:            "aws-chunked encoding",
-			contentEncoding: AWS4ChunkedEncoding,
+			contentEncoding: aws4ChunkedEncoding,
 			expected:        true,
 		},
 		{
@@ -181,7 +181,7 @@ func TestGetDecodedContentLength(t *testing.T) {
 			if tt.headerValue != "" {
 				req.Header.Set("X-Amz-Decoded-Content-Length", tt.headerValue)
 			}
-			result := GetDecodedContentLength(req)
+			result := getDecodedContentLength(req)
 			if result != tt.expectedValue {
 				t.Errorf("expected %d, got %d", tt.expectedValue, result)
 			}
@@ -396,7 +396,7 @@ func TestWrapChunkedRequest(t *testing.T) {
 
 	t.Run("chunked request missing auth header", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/bucket/key", nil)
-		req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+		req.Header.Set("X-Amz-Content-Sha256", streamingPayloadHash)
 		_, err := auth.WrapChunkedRequest(req)
 		if err == nil {
 			t.Error("expected error for missing auth header")
@@ -405,7 +405,7 @@ func TestWrapChunkedRequest(t *testing.T) {
 
 	t.Run("chunked request with invalid credentials", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/bucket/key", nil)
-		req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+		req.Header.Set("X-Amz-Content-Sha256", streamingPayloadHash)
 		req.Header.Set("X-Amz-Date", "20230101T000000Z")
 		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=invalid-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=abc123")
 		_, err := auth.WrapChunkedRequest(req)
@@ -458,7 +458,7 @@ func TestWrapChunkedRequest(t *testing.T) {
 		buf.WriteString("0;chunk-signature=" + finalSig + "\r\n")
 
 		req := httptest.NewRequest("PUT", "/bucket/key", &buf)
-		req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+		req.Header.Set("X-Amz-Content-Sha256", streamingPayloadHash)
 		req.Header.Set("X-Amz-Date", timestamp)
 		req.Header.Set("X-Amz-Decoded-Content-Length", "10")
 		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature="+seedSignature)
@@ -483,22 +483,6 @@ func TestWrapChunkedRequest(t *testing.T) {
 			t.Errorf("expected content length 10, got %d", result.ContentLength)
 		}
 	})
-}
-
-func TestGetSecretKey(t *testing.T) {
-	auth := NewAWS4Authenticator()
-	auth.AddCredentials("key1", "secret1")
-	auth.AddCredentials("key2", "secret2")
-
-	if auth.GetSecretKey("key1") != "secret1" {
-		t.Error("expected secret1")
-	}
-	if auth.GetSecretKey("key2") != "secret2" {
-		t.Error("expected secret2")
-	}
-	if auth.GetSecretKey("key3") != "" {
-		t.Error("expected empty string for unknown key")
-	}
 }
 
 func TestAuthMiddlewareChunkedUpload(t *testing.T) {
@@ -537,7 +521,7 @@ func TestAuthMiddlewareChunkedUpload(t *testing.T) {
 	// First, create a temporary request to calculate the correct seed signature
 	tempReq := httptest.NewRequest("PUT", "/bucket/key", nil)
 	tempReq.Host = "example.amazonaws.com"
-	tempReq.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+	tempReq.Header.Set("X-Amz-Content-Sha256", streamingPayloadHash)
 	tempReq.Header.Set("X-Amz-Date", timestamp)
 	tempReq.Header.Set("X-Amz-Decoded-Content-Length", "10")
 
@@ -576,7 +560,7 @@ func TestAuthMiddlewareChunkedUpload(t *testing.T) {
 	// Create request with correct signature
 	req := httptest.NewRequest("PUT", "/bucket/key", &buf)
 	req.Host = "example.amazonaws.com"
-	req.Header.Set("X-Amz-Content-Sha256", StreamingPayloadHash)
+	req.Header.Set("X-Amz-Content-Sha256", streamingPayloadHash)
 	req.Header.Set("X-Amz-Date", timestamp)
 	req.Header.Set("X-Amz-Decoded-Content-Length", "10")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test-key/20230101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length, Signature="+seedSignature)

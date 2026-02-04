@@ -278,10 +278,7 @@ func (a *AWS4Authenticator) calculateSignatureV4Query(r *http.Request, secretAcc
 	}, "\n")
 
 	// Step 3: Calculate signature
-	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
-	dateRegionKey := hmacSHA256(dateKey, []byte(region))
-	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
-	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	signingKey := CalculateSigningKey(secretAccessKey, date, region, service)
 
 	signature := hmacSHA256(signingKey, []byte(stringToSign))
 
@@ -312,10 +309,7 @@ func (a *AWS4Authenticator) calculateSignatureV4Header(r *http.Request, secretAc
 	}, "\n")
 
 	// Step 3: Calculate signature
-	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
-	dateRegionKey := hmacSHA256(dateKey, []byte(region))
-	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
-	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	signingKey := CalculateSigningKey(secretAccessKey, date, region, service)
 
 	signature := hmacSHA256(signingKey, []byte(stringToSign))
 
@@ -427,4 +421,13 @@ func hmacSHA256(key, data []byte) []byte {
 // parseAmzDate parses AWS timestamp format (YYYYMMDDTHHMMSSZ)
 func parseAmzDate(timestamp string) (time.Time, error) {
 	return time.Parse("20060102T150405Z", timestamp)
+}
+
+// CalculateSigningKey derives the signing key from the secret access key
+func CalculateSigningKey(secretAccessKey, date, region, service string) []byte {
+	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
+	dateRegionKey := hmacSHA256(dateKey, []byte(region))
+	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
+	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
+	return signingKey
 }

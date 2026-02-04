@@ -21,16 +21,16 @@ import (
 	"strings"
 )
 
-// StreamingPayloadHash is the payload hash value for streaming uploads
-const StreamingPayloadHash = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+// streamingPayloadHash is the payload hash value for streaming uploads
+const streamingPayloadHash = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
 
-// AWS4ChunkedEncoding is the content encoding value for AWS chunked uploads
-const AWS4ChunkedEncoding = "aws-chunked"
+// aws4ChunkedEncoding is the content encoding value for AWS chunked uploads
+const aws4ChunkedEncoding = "aws-chunked"
 
 // ChunkSignaturePrefix is the prefix for chunk signatures
 const chunkSignaturePrefix = "chunk-signature="
 
-// EmptyStringSHA256 is the SHA256 hash of an empty string
+// emptyStringSHA256 is the SHA256 hash of an empty string
 const emptyStringSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 // ErrInvalidChunkFormat is returned when a chunk has an invalid format
@@ -59,7 +59,7 @@ type ChunkedReader struct {
 // - credScope: the credential scope (date/region/service/aws4_request)
 // - timestamp: the X-Amz-Date value
 // - seedSignature: the signature from the Authorization header
-func NewChunkedReader(r io.Reader, signingKey []byte, credScope, timestamp, seedSignature string) *ChunkedReader {
+func NewChunkedReader(r io.Reader, signingKey []byte, credScope, timestamp, seedSignature string) io.Reader {
 	return &ChunkedReader{
 		reader:        bufio.NewReader(r),
 		signingKey:    signingKey,
@@ -222,13 +222,13 @@ func IsChunkedUpload(r *http.Request) bool {
 	contentSha256 := r.Header.Get("X-Amz-Content-Sha256")
 	contentEncoding := r.Header.Get("Content-Encoding")
 
-	return contentSha256 == StreamingPayloadHash ||
-		strings.Contains(contentEncoding, AWS4ChunkedEncoding)
+	return contentSha256 == streamingPayloadHash ||
+		strings.Contains(contentEncoding, aws4ChunkedEncoding)
 }
 
-// GetDecodedContentLength returns the decoded content length for chunked uploads.
+// getDecodedContentLength returns the decoded content length for chunked uploads.
 // Returns -1 if not a chunked upload or if the header is not present.
-func GetDecodedContentLength(r *http.Request) int64 {
+func getDecodedContentLength(r *http.Request) int64 {
 	decodedLen := r.Header.Get("X-Amz-Decoded-Content-Length")
 	if decodedLen == "" {
 		return -1
@@ -238,15 +238,6 @@ func GetDecodedContentLength(r *http.Request) int64 {
 		return -1
 	}
 	return length
-}
-
-// CalculateSigningKey derives the signing key from the secret access key
-func CalculateSigningKey(secretAccessKey, date, region, service string) []byte {
-	dateKey := hmacSHA256([]byte("AWS4"+secretAccessKey), []byte(date))
-	dateRegionKey := hmacSHA256(dateKey, []byte(region))
-	dateRegionServiceKey := hmacSHA256(dateRegionKey, []byte(service))
-	signingKey := hmacSHA256(dateRegionServiceKey, []byte("aws4_request"))
-	return signingKey
 }
 
 // WrapChunkedRequest wraps the request body with a ChunkedReader for validation.
@@ -300,7 +291,7 @@ func (a *AWS4Authenticator) WrapChunkedRequest(r *http.Request) (*http.Request, 
 	// Get timestamp
 	timestamp := r.Header.Get("X-Amz-Date")
 	if timestamp == "" {
-		return nil, NewAuthError("InvalidArgument", "Missing X-Amz-Date header")
+		timestamp = r.Header.Get("Date")
 	}
 
 	// Calculate signing key
@@ -311,19 +302,20 @@ func (a *AWS4Authenticator) WrapChunkedRequest(r *http.Request) (*http.Request, 
 
 	// Create a new request with the wrapped body
 	newReq := r.Clone(r.Context())
-	newReq.Body = io.NopCloser(chunkedReader)
+	newReq.Body = struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: chunkedReader,
+		Closer: r.Body,
+	}
 
 	// Update Content-Length if x-amz-decoded-content-length is present
-	decodedLen := GetDecodedContentLength(r)
+	decodedLen := getDecodedContentLength(r)
 	if decodedLen >= 0 {
 		newReq.ContentLength = decodedLen
+		newReq.Header.Del("X-Amz-Decoded-Content-Length")
 	}
 
 	return newReq, nil
-}
-
-// GetSecretKey returns the secret access key for a given access key ID.
-// Returns empty string if not found.
-func (a *AWS4Authenticator) GetSecretKey(accessKeyID string) string {
-	return a.credentials[accessKeyID]
 }
