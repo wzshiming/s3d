@@ -82,8 +82,9 @@ type InitiateMultipartUploadResult struct {
 
 // Multipart represents a part in CompleteMultipartUpload request
 type Multipart struct {
-	PartNumber int    `xml:"PartNumber"`
-	ETag       string `xml:"ETag"`
+	PartNumber     int    `xml:"PartNumber"`
+	ETag           string `xml:"ETag"`
+	ChecksumSHA256 string `xml:"ChecksumSHA256,omitempty"`
 }
 
 // CompletedPart represents a part in ListParts response

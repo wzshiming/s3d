@@ -43,12 +43,12 @@ func TestMultipartUpload(t *testing.T) {
 	part1Content := "Part 1 content"
 	part2Content := "Part 2 content"
 
-	objInfo1, err := store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte(part1Content)))
+	objInfo1, err := store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte(part1Content)), "")
 	if err != nil {
 		t.Fatalf("UploadPart 1 failed: %v", err)
 	}
 
-	objInfo2, err := store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte(part2Content)))
+	objInfo2, err := store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte(part2Content)), "")
 	if err != nil {
 		t.Fatalf("UploadPart 2 failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestMultipartUpload(t *testing.T) {
 		{PartNumber: 2, ETag: objInfo2.ETag},
 	}
 
-	finalObjInfo, err := store.CompleteMultipartUpload(bucketName, objectKey, uploadID, parts)
+	finalObjInfo, err := store.CompleteMultipartUpload(bucketName, objectKey, uploadID, parts, "")
 	if err != nil {
 		t.Fatalf("CompleteMultipartUpload failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestAbortMultipartUpload(t *testing.T) {
 	}
 
 	// Upload a part
-	_, err = store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte("test")))
+	_, err = store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte("test")), "")
 	if err != nil {
 		t.Fatalf("UploadPart failed: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestAbortMultipartUpload(t *testing.T) {
 	}
 
 	// Verify upload is aborted
-	_, err = store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte("test")))
+	_, err = store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte("test")), "")
 	if err != ErrInvalidUploadID {
 		t.Fatal("Expected ErrInvalidUploadID after abort")
 	}
@@ -229,17 +229,17 @@ func TestListParts(t *testing.T) {
 	}
 
 	// Upload parts
-	_, err = store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte("part1")))
+	_, err = store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte("part1")), "")
 	if err != nil {
 		t.Fatalf("UploadPart 1 failed: %v", err)
 	}
 
-	_, err = store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte("part2")))
+	_, err = store.UploadPart(bucketName, objectKey, uploadID, 2, bytes.NewReader([]byte("part2")), "")
 	if err != nil {
 		t.Fatalf("UploadPart 2 failed: %v", err)
 	}
 
-	_, err = store.UploadPart(bucketName, objectKey, uploadID, 3, bytes.NewReader([]byte("part3")))
+	_, err = store.UploadPart(bucketName, objectKey, uploadID, 3, bytes.NewReader([]byte("part3")), "")
 	if err != nil {
 		t.Fatalf("UploadPart 3 failed: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestInvalidUploadID(t *testing.T) {
 	}
 
 	// Try to upload part with invalid upload ID
-	_, err = store.UploadPart("test-bucket", "key.txt", "invalid-upload-id", 1, bytes.NewReader([]byte("data")))
+	_, err = store.UploadPart("test-bucket", "key.txt", "invalid-upload-id", 1, bytes.NewReader([]byte("data")), "")
 	if err != ErrInvalidUploadID {
 		t.Fatalf("Expected ErrInvalidUploadID, got %v", err)
 	}
@@ -312,7 +312,7 @@ func TestInvalidPartNumber(t *testing.T) {
 	// Test invalid part numbers
 	invalidParts := []int{0, -1, 10001}
 	for _, partNum := range invalidParts {
-		_, err = store.UploadPart("test-bucket", "key.txt", uploadID, partNum, bytes.NewReader([]byte("data")))
+		_, err = store.UploadPart("test-bucket", "key.txt", uploadID, partNum, bytes.NewReader([]byte("data")), "")
 		if err != ErrInvalidPartNumber {
 			t.Errorf("Part %d should return ErrInvalidPartNumber, got %v", partNum, err)
 		}
@@ -362,13 +362,13 @@ func TestCompleteWithWrongBucketKey(t *testing.T) {
 	}
 
 	// Try to complete with wrong bucket
-	_, err = store.CompleteMultipartUpload("bucket2", "key1.txt", uploadID, []Multipart{})
+	_, err = store.CompleteMultipartUpload("bucket2", "key1.txt", uploadID, []Multipart{}, "")
 	if err != ErrInvalidUploadID {
 		t.Fatalf("Expected ErrInvalidUploadID for wrong bucket, got %v", err)
 	}
 
 	// Try to complete with wrong key
-	_, err = store.CompleteMultipartUpload("bucket1", "key2.txt", uploadID, []Multipart{})
+	_, err = store.CompleteMultipartUpload("bucket1", "key2.txt", uploadID, []Multipart{}, "")
 	if err != ErrInvalidUploadID {
 		t.Fatalf("Expected ErrInvalidUploadID for wrong key, got %v", err)
 	}
@@ -406,13 +406,13 @@ func TestMultipartUploadPersistence(t *testing.T) {
 	}
 	defer store2.Close()
 	// Upload part with the new store - should work if persistence works
-	objInfo, err := store2.UploadPart("test-bucket", "key.txt", uploadID, 1, bytes.NewReader([]byte("test data")))
+	objInfo, err := store2.UploadPart("test-bucket", "key.txt", uploadID, 1, bytes.NewReader([]byte("test data")), "")
 	if err != nil {
 		t.Fatalf("Upload should work after restart: %v", err)
 	}
 
 	// Complete upload should also work
-	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Multipart{{PartNumber: 1, ETag: objInfo.ETag}})
+	_, err = store2.CompleteMultipartUpload("test-bucket", "key.txt", uploadID, []Multipart{{PartNumber: 1, ETag: objInfo.ETag}}, "")
 	if err != nil {
 		t.Fatalf("Complete should work after restart: %v", err)
 	}

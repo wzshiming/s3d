@@ -56,7 +56,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 	// Get the expected checksum from the request header (if provided)
 	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
 
-	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
+	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body, expectedChecksumSHA256)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -65,15 +65,11 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
 		case storage.ErrInvalidPartNumber:
 			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
-		return
-	}
-
-	// Validate checksum if provided
-	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != objInfo.ChecksumSHA256 {
-		s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		return
 	}
 
@@ -160,13 +156,18 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		})
 	}
 
-	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts)
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
+	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts, expectedChecksumSHA256)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
 		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
