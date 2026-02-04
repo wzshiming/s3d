@@ -190,6 +190,88 @@ test_large_file_checksum() {
     fi
 }
 
+# Test: PutObject with pre-calculated checksum-sha256
+test_put_object_with_precalculated_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: PutObject with pre-calculated --checksum-sha256${NC}"
+    
+    # Create test file
+    echo "Hello, Pre-calculated SHA256 Checksum!" > "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt"
+    
+    # Calculate SHA256 hash locally and convert to base64 (required format for S3)
+    LOCAL_HASH_HEX=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" | cut -d' ' -f1)
+    # Convert hex to binary and then to base64
+    LOCAL_HASH_BASE64=$(echo -n "$LOCAL_HASH_HEX" | xxd -r -p | base64)
+    echo "  Local SHA256 (hex): $LOCAL_HASH_HEX"
+    echo "  Local SHA256 (base64): $LOCAL_HASH_BASE64"
+    
+    # Upload with pre-calculated checksum
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key precalc-checksum-test.txt \
+        --body "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" \
+        --checksum-sha256 "${LOCAL_HASH_BASE64}" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ PutObject with --checksum-sha256 failed${NC}"
+        echo "$OUTPUT"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ PutObject with --checksum-sha256 succeeded${NC}"
+    
+    # Verify response contains ChecksumSHA256
+    if echo "$OUTPUT" | grep -q "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ PutObject returned ChecksumSHA256 in response${NC}"
+        RETURNED_CHECKSUM=$(echo "$OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  Returned ChecksumSHA256: $RETURNED_CHECKSUM"
+        
+        # Verify returned checksum matches our pre-calculated one
+        if [ "$RETURNED_CHECKSUM" = "$LOCAL_HASH_BASE64" ]; then
+            echo -e "${GREEN}✓ Returned checksum matches pre-calculated checksum${NC}"
+        else
+            echo -e "${RED}✗ Returned checksum does not match pre-calculated checksum${NC}"
+            echo "  Expected: $LOCAL_HASH_BASE64"
+            echo "  Got: $RETURNED_CHECKSUM"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not in JSON output (may be in headers)${NC}"
+    fi
+    
+    # Verify we can retrieve the object and checksum matches
+    GET_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api get-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key precalc-checksum-test.txt \
+        --checksum-mode ENABLED \
+        "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-downloaded.txt" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ GetObject for pre-calculated checksum file failed${NC}"
+        echo "$GET_OUTPUT"
+        exit 1
+    fi
+    
+    # Verify content matches
+    if diff "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-downloaded.txt" > /dev/null; then
+        echo -e "${GREEN}✓ Downloaded file content matches original${NC}"
+    else
+        echo -e "${RED}✗ Downloaded file content does not match original${NC}"
+        exit 1
+    fi
+    
+    # Verify checksum in GetObject response
+    if echo "$GET_OUTPUT" | grep -qi "ChecksumSHA256"; then
+        GET_CHECKSUM=$(echo "$GET_OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        if [ "$GET_CHECKSUM" = "$LOCAL_HASH_BASE64" ]; then
+            echo -e "${GREEN}✓ GetObject checksum matches pre-calculated checksum${NC}"
+        else
+            echo -e "${RED}✗ GetObject checksum does not match${NC}"
+            echo "  Expected: $LOCAL_HASH_BASE64"
+            echo "  Got: $GET_CHECKSUM"
+            exit 1
+        fi
+    fi
+}
+
 # Run all checksum tests
 run_checksum_tests() {
     setup
@@ -199,6 +281,7 @@ run_checksum_tests() {
     test_get_object_checksum_header
     test_head_object_checksum
     test_large_file_checksum
+    test_put_object_with_precalculated_checksum_sha256
     
     cleanup_checksum_tests
     
