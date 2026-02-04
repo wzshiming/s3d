@@ -1106,3 +1106,203 @@ func TestDeleteObjects(t *testing.T) {
 		}
 	})
 }
+
+func TestChecksumSHA256(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-checksum-sha256"
+	objectKey := "checksum-test.txt"
+	objectContent := "Hello, Checksum!"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	var expectedChecksum string
+
+	// Test PutObject returns checksum
+	t.Run("PutObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+			Body:   strings.NewReader(objectContent),
+		})
+		if err != nil {
+			t.Fatalf("PutObject failed: %v", err)
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+
+		// The SDK parses x-amz-checksum-sha256 header into ChecksumSHA256 field
+		if output.ChecksumSHA256 == nil {
+			t.Fatal("Expected ChecksumSHA256 to be set in PutObject response")
+		}
+		if *output.ChecksumSHA256 == "" {
+			t.Fatal("ChecksumSHA256 should not be empty")
+		}
+		expectedChecksum = *output.ChecksumSHA256
+		t.Logf("ChecksumSHA256: %s", expectedChecksum)
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Test GetObject returns checksum when checksum mode is enabled
+	t.Run("GetObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(objectKey),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		// Read the body to consume it
+		_, err = io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read object body: %v", err)
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+
+		// When checksum mode is enabled, SDK should parse x-amz-checksum-sha256
+		if output.ChecksumSHA256 == nil {
+			t.Fatal("Expected ChecksumSHA256 to be set in GetObject response when ChecksumMode is enabled")
+		}
+		if *output.ChecksumSHA256 == "" {
+			t.Fatal("ChecksumSHA256 should not be empty")
+		}
+		if *output.ChecksumSHA256 != expectedChecksum {
+			t.Errorf("ChecksumSHA256 mismatch: got %s, want %s", *output.ChecksumSHA256, expectedChecksum)
+		}
+		t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Test HeadObject returns checksum when checksum mode is enabled
+	t.Run("HeadObjectReturnsChecksum", func(t *testing.T) {
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(objectKey),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+
+		// When checksum mode is enabled, SDK should parse x-amz-checksum-sha256
+		if output.ChecksumSHA256 == nil {
+			t.Fatal("Expected ChecksumSHA256 to be set in HeadObject response when ChecksumMode is enabled")
+		}
+		if *output.ChecksumSHA256 == "" {
+			t.Fatal("ChecksumSHA256 should not be empty")
+		}
+		if *output.ChecksumSHA256 != expectedChecksum {
+			t.Errorf("ChecksumSHA256 mismatch: got %s, want %s", *output.ChecksumSHA256, expectedChecksum)
+		}
+		t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+		t.Logf("ETag: %s", *output.ETag)
+	})
+
+	// Cleanup
+	ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+}
+
+func TestPutObjectWithChecksumAlgorithm(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-checksum-algorithm"
+	objectKey := "checksum-algo-test.txt"
+	objectContent := "Hello, Checksum Algorithm!"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Test PutObject with ChecksumAlgorithm=SHA256
+	t.Run("PutObjectWithChecksumAlgorithmSHA256", func(t *testing.T) {
+		output, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:            aws.String(bucketName),
+			Key:               aws.String(objectKey),
+			Body:              strings.NewReader(objectContent),
+			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		})
+		if err != nil {
+			t.Fatalf("PutObject with ChecksumAlgorithm failed: %v", err)
+		}
+
+		// Verify ETag is set
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+
+		// When ChecksumAlgorithm is specified, SDK should return ChecksumSHA256
+		if output.ChecksumSHA256 == nil {
+			t.Fatal("Expected ChecksumSHA256 to be set when ChecksumAlgorithm=SHA256")
+		}
+		if *output.ChecksumSHA256 == "" {
+			t.Fatal("ChecksumSHA256 should not be empty")
+		}
+		t.Logf("ChecksumSHA256: %s", *output.ChecksumSHA256)
+		t.Logf("ETag: %s", *output.ETag)
+
+		// Verify we can retrieve the object and checksum matches
+		getOutput, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(objectKey),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer getOutput.Body.Close()
+
+		// Read the body to consume it
+		data, err := io.ReadAll(getOutput.Body)
+		if err != nil {
+			t.Fatalf("Failed to read object body: %v", err)
+		}
+
+		// Verify content matches
+		if string(data) != objectContent {
+			t.Errorf("Content mismatch: got %s, want %s", string(data), objectContent)
+		}
+
+		// Verify checksum matches
+		if getOutput.ChecksumSHA256 == nil {
+			t.Fatal("Expected ChecksumSHA256 in GetObject response")
+		}
+		if *getOutput.ChecksumSHA256 != *output.ChecksumSHA256 {
+			t.Errorf("ChecksumSHA256 mismatch: PutObject=%s, GetObject=%s",
+				*output.ChecksumSHA256, *getOutput.ChecksumSHA256)
+		}
+	})
+
+	// Cleanup
+	ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+}

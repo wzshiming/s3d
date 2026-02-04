@@ -54,7 +54,8 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, userMetadata Metad
 }
 
 // UploadPart uploads a part of a multipart upload
-func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader) (*ObjectInfo, error) {
+// If expectedChecksumSHA256 is provided (non-empty), it validates the checksum after computing.
+func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader, expectedChecksumSHA256 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -88,6 +89,12 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	tmpFile.Close()
 
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+	checksumSHA256 := urlSafeToStdBase64(etag)
+
+	// Validate checksum if provided
+	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -107,11 +114,12 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     partFileInfo.Size(),
-		ETag:     etag,
-		ModTime:  partFileInfo.ModTime(),
-		Metadata: metadata.Metadata,
+		Key:            key,
+		Size:           partFileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        partFileInfo.ModTime(),
+		Metadata:       metadata.Metadata,
 	}, nil
 }
 
@@ -207,16 +215,17 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	metadata, _ := loadUploadMetadata(uploadMetaPath)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     partFileInfo.Size(),
-		ETag:     etag,
-		ModTime:  partFileInfo.ModTime(),
-		Metadata: metadata.Metadata,
+		Key:            key,
+		Size:           partFileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        partFileInfo.ModTime(),
+		Metadata:       metadata.Metadata,
 	}, nil
 }
 
 // CompleteMultipartUpload completes a multipart upload
-func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Multipart) (*ObjectInfo, error) {
+func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Multipart, expectedChecksumSHA256 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -252,6 +261,16 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	for _, part := range parts {
 		// Strip quotes from ETag if present (client may send quoted ETags)
 		etag := strings.Trim(part.ETag, `"`)
+
+		// Validate part checksum if provided
+		if part.ChecksumSHA256 != "" {
+			expectedPartChecksum := urlSafeToStdBase64(etag)
+			if part.ChecksumSHA256 != expectedPartChecksum {
+				tmpFile.Close()
+				return nil, ErrChecksumMismatch
+			}
+		}
+
 		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, etag))
 		partFile, err := os.Open(partPath)
 		if err != nil {
@@ -276,6 +295,13 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 
 	// Store metadata - use URL-safe base64 encoded SHA256
 	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+
+	checksumSHA256 := urlSafeToStdBase64(etag)
+
+	// Validate checksum if provided
+	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
 
 	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	uploadMetadata, err := loadUploadMetadata(uploadMetaPath)
@@ -332,11 +358,12 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
 
 	return &ObjectInfo{
-		Key:      key,
-		Size:     fileInfo.Size(),
-		ETag:     etag,
-		ModTime:  metaFileInfo.ModTime(),
-		Metadata: uploadMetadata.Metadata,
+		Key:            key,
+		Size:           fileInfo.Size(),
+		ETag:           etag,
+		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ModTime:        metaFileInfo.ModTime(),
+		Metadata:       uploadMetadata.Metadata,
 	}, nil
 }
 

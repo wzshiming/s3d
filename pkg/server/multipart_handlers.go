@@ -53,7 +53,10 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
-	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body)
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
+	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body, expectedChecksumSHA256)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -62,6 +65,8 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
 		case storage.ErrInvalidPartNumber:
 			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
@@ -70,7 +75,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -146,18 +151,24 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		}
 
 		parts = append(parts, storage.Multipart{
-			PartNumber: p.PartNumber,
-			ETag:       p.ETag,
+			PartNumber:     p.PartNumber,
+			ETag:           p.ETag,
+			ChecksumSHA256: p.ChecksumSHA256,
 		})
 	}
 
-	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts)
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
+	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts, expectedChecksumSHA256)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
 		case storage.ErrInvalidUploadID:
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
@@ -165,10 +176,11 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 	}
 
 	result := CompleteMultipartUploadResult{
-		Location: fmt.Sprintf("/%s/%s", bucket, key),
-		Bucket:   bucket,
-		Key:      key,
-		ETag:     fmt.Sprintf("%q", objInfo.ETag),
+		Location:       fmt.Sprintf("/%s/%s", bucket, key),
+		Bucket:         bucket,
+		Key:            key,
+		ETag:           fmt.Sprintf("%q", objInfo.ETag),
+		ChecksumSHA256: objInfo.ChecksumSHA256,
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)

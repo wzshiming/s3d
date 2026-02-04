@@ -21,13 +21,19 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	// Get the expected checksum from the request header (if provided)
+	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+
 	metadata := extractMetadata(r)
 
-	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata)
+	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
+		switch err {
+		case storage.ErrBucketNotFound:
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
+		case storage.ErrChecksumMismatch:
+			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
+		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -35,7 +41,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(objInfo.ETag))
+	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -57,7 +63,7 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
-	w.Header().Set("x-amz-checksum-sha256", urlSafeToStdBase64(info.ETag))
+	w.Header().Set("x-amz-checksum-sha256", info.ChecksumSHA256)
 	setMetadataHeaders(w, info.Metadata)
 
 	http.ServeContent(w, r, key, info.ModTime, reader)

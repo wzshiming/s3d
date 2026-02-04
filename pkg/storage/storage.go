@@ -36,6 +36,7 @@ var (
 	ErrInvalidPartNumber   = errors.New("invalid part number")
 	ErrInvalidBucketName   = errors.New("invalid bucket name")
 	ErrInvalidObjectKey    = errors.New("invalid object key")
+	ErrChecksumMismatch    = errors.New("checksum mismatch")
 )
 
 // Storage is the local filesystem storage backend

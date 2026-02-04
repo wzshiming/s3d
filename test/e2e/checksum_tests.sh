@@ -1,0 +1,538 @@
+#!/bin/bash
+# Tests for checksum operations (SHA256)
+
+source "$(dirname "$0")/common.sh"
+
+CHECKSUM_TEST_BUCKET="test-checksum-bucket"
+CHECKSUM_TEST_DATA_DIR="${TEST_DATA_DIR}/checksum"
+
+# Setup checksum test environment
+setup_checksum_tests() {
+    echo -e "\n${YELLOW}Setting up checksum tests...${NC}"
+    mkdir -p "${CHECKSUM_TEST_DATA_DIR}"
+    
+    # Create test bucket
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 mb s3://${CHECKSUM_TEST_BUCKET}
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to create checksum test bucket${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Checksum test bucket created${NC}"
+}
+
+# Cleanup checksum test environment
+cleanup_checksum_tests() {
+    echo -e "\n${YELLOW}Cleaning up checksum tests...${NC}"
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rm s3://${CHECKSUM_TEST_BUCKET}/ --recursive 2>/dev/null || true
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3 rb s3://${CHECKSUM_TEST_BUCKET} 2>/dev/null || true
+    rm -rf "${CHECKSUM_TEST_DATA_DIR}"
+}
+
+# Test: PutObject with SHA256 checksum algorithm
+test_put_object_with_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: PutObject with SHA256 checksum algorithm${NC}"
+    
+    # Create test file
+    echo "Hello, SHA256 Checksum!" > "${CHECKSUM_TEST_DATA_DIR}/checksum-test.txt"
+    
+    # Upload with checksum algorithm specified
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key checksum-test.txt \
+        --body "${CHECKSUM_TEST_DATA_DIR}/checksum-test.txt" \
+        --checksum-algorithm SHA256 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ PutObject with checksum algorithm failed${NC}"
+        echo "$OUTPUT"
+        exit 1
+    fi
+    
+    # Verify response contains ChecksumSHA256
+    if echo "$OUTPUT" | grep -q "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ PutObject returned ChecksumSHA256 in response${NC}"
+        CHECKSUM=$(echo "$OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  ChecksumSHA256: $CHECKSUM"
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not in JSON output (may be in headers)${NC}"
+    fi
+    
+    # Verify ETag is set
+    if echo "$OUTPUT" | grep -q "ETag"; then
+        echo -e "${GREEN}✓ ETag is set${NC}"
+    else
+        echo -e "${RED}✗ ETag not found in response${NC}"
+        exit 1
+    fi
+}
+
+# Test: GetObject returns checksum header
+test_get_object_checksum_header() {
+    echo -e "\n${YELLOW}Test: GetObject returns checksum in header${NC}"
+    
+    # Get object with verbose output to see headers
+    HEADERS=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api get-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key checksum-test.txt \
+        --checksum-mode ENABLED \
+        "${CHECKSUM_TEST_DATA_DIR}/downloaded-checksum.txt" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ GetObject with checksum mode failed${NC}"
+        echo "$HEADERS"
+        exit 1
+    fi
+    
+    # Verify ChecksumSHA256 is in the response
+    if echo "$HEADERS" | grep -qi "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ GetObject returned ChecksumSHA256${NC}"
+        CHECKSUM=$(echo "$HEADERS" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  ChecksumSHA256: $CHECKSUM"
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not found in response (checking if file was downloaded correctly)${NC}"
+    fi
+    
+    # Verify downloaded content matches
+    if diff "${CHECKSUM_TEST_DATA_DIR}/checksum-test.txt" "${CHECKSUM_TEST_DATA_DIR}/downloaded-checksum.txt" > /dev/null; then
+        echo -e "${GREEN}✓ Downloaded file content matches original${NC}"
+    else
+        echo -e "${RED}✗ Downloaded file content does not match original${NC}"
+        exit 1
+    fi
+}
+
+# Test: HeadObject returns checksum
+test_head_object_checksum() {
+    echo -e "\n${YELLOW}Test: HeadObject returns checksum${NC}"
+    
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api head-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key checksum-test.txt \
+        --checksum-mode ENABLED 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ HeadObject with checksum mode failed${NC}"
+        echo "$OUTPUT"
+        exit 1
+    fi
+    
+    # Verify ChecksumSHA256 is in the response
+    if echo "$OUTPUT" | grep -qi "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ HeadObject returned ChecksumSHA256${NC}"
+        CHECKSUM=$(echo "$OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  ChecksumSHA256: $CHECKSUM"
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not visible in output${NC}"
+    fi
+    
+    # Verify ETag and ContentLength are set
+    if echo "$OUTPUT" | grep -q "ETag"; then
+        echo -e "${GREEN}✓ ETag is set${NC}"
+    else
+        echo -e "${RED}✗ ETag not found${NC}"
+        exit 1
+    fi
+    
+    if echo "$OUTPUT" | grep -q "ContentLength"; then
+        echo -e "${GREEN}✓ ContentLength is set${NC}"
+    else
+        echo -e "${RED}✗ ContentLength not found${NC}"
+        exit 1
+    fi
+}
+
+# Test: Large file checksum
+test_large_file_checksum() {
+    echo -e "\n${YELLOW}Test: Large file with checksum${NC}"
+    
+    # Create a larger file (1MB)
+    dd if=/dev/urandom of="${CHECKSUM_TEST_DATA_DIR}/large-file.bin" bs=1024 count=1024 2>/dev/null
+    
+    # Calculate SHA256 hash locally for verification
+    LOCAL_HASH=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/large-file.bin" | cut -d' ' -f1)
+    echo "  Local SHA256 hash: $LOCAL_HASH"
+    
+    # Upload with checksum algorithm
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key large-file.bin \
+        --body "${CHECKSUM_TEST_DATA_DIR}/large-file.bin" \
+        --checksum-algorithm SHA256 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ PutObject for large file failed${NC}"
+        echo "$OUTPUT"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Large file uploaded with checksum${NC}"
+    
+    # Download and verify
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api get-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key large-file.bin \
+        --checksum-mode ENABLED \
+        "${CHECKSUM_TEST_DATA_DIR}/large-file-downloaded.bin" > /dev/null 2>&1
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ GetObject for large file failed${NC}"
+        exit 1
+    fi
+    
+    # Verify downloaded file hash matches
+    DOWNLOADED_HASH=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/large-file-downloaded.bin" | cut -d' ' -f1)
+    if [ "$LOCAL_HASH" = "$DOWNLOADED_HASH" ]; then
+        echo -e "${GREEN}✓ Large file checksum verified (SHA256 matches)${NC}"
+    else
+        echo -e "${RED}✗ Large file checksum mismatch${NC}"
+        echo "  Local:      $LOCAL_HASH"
+        echo "  Downloaded: $DOWNLOADED_HASH"
+        exit 1
+    fi
+}
+
+# Test: PutObject with pre-calculated checksum-sha256
+test_put_object_with_precalculated_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: PutObject with pre-calculated --checksum-sha256${NC}"
+    
+    # Create test file
+    echo "Hello, Pre-calculated SHA256 Checksum!" > "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt"
+    
+    # Calculate SHA256 hash locally and convert to base64 (required format for S3)
+    LOCAL_HASH_HEX=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" | cut -d' ' -f1)
+    # Convert hex to binary and then to base64
+    LOCAL_HASH_BASE64=$(echo -n "$LOCAL_HASH_HEX" | xxd -r -p | base64)
+    echo "  Local SHA256 (hex): $LOCAL_HASH_HEX"
+    echo "  Local SHA256 (base64): $LOCAL_HASH_BASE64"
+    
+    # Upload with pre-calculated checksum
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key precalc-checksum-test.txt \
+        --body "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" \
+        --checksum-sha256 "${LOCAL_HASH_BASE64}" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ PutObject with --checksum-sha256 failed${NC}"
+        echo "$OUTPUT"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ PutObject with --checksum-sha256 succeeded${NC}"
+    
+    # Verify response contains ChecksumSHA256
+    if echo "$OUTPUT" | grep -q "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ PutObject returned ChecksumSHA256 in response${NC}"
+        RETURNED_CHECKSUM=$(echo "$OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  Returned ChecksumSHA256: $RETURNED_CHECKSUM"
+        
+        # Verify returned checksum matches our pre-calculated one
+        if [ "$RETURNED_CHECKSUM" = "$LOCAL_HASH_BASE64" ]; then
+            echo -e "${GREEN}✓ Returned checksum matches pre-calculated checksum${NC}"
+        else
+            echo -e "${RED}✗ Returned checksum does not match pre-calculated checksum${NC}"
+            echo "  Expected: $LOCAL_HASH_BASE64"
+            echo "  Got: $RETURNED_CHECKSUM"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not in JSON output (may be in headers)${NC}"
+    fi
+    
+    # Verify we can retrieve the object and checksum matches
+    GET_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api get-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key precalc-checksum-test.txt \
+        --checksum-mode ENABLED \
+        "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-downloaded.txt" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ GetObject for pre-calculated checksum file failed${NC}"
+        echo "$GET_OUTPUT"
+        exit 1
+    fi
+    
+    # Verify content matches
+    if diff "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-test.txt" "${CHECKSUM_TEST_DATA_DIR}/precalc-checksum-downloaded.txt" > /dev/null; then
+        echo -e "${GREEN}✓ Downloaded file content matches original${NC}"
+    else
+        echo -e "${RED}✗ Downloaded file content does not match original${NC}"
+        exit 1
+    fi
+    
+    # Verify checksum in GetObject response
+    if echo "$GET_OUTPUT" | grep -qi "ChecksumSHA256"; then
+        GET_CHECKSUM=$(echo "$GET_OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        if [ "$GET_CHECKSUM" = "$LOCAL_HASH_BASE64" ]; then
+            echo -e "${GREEN}✓ GetObject checksum matches pre-calculated checksum${NC}"
+        else
+            echo -e "${RED}✗ GetObject checksum does not match${NC}"
+            echo "  Expected: $LOCAL_HASH_BASE64"
+            echo "  Got: $GET_CHECKSUM"
+            exit 1
+        fi
+    fi
+}
+
+# Test: PutObject with mismatched checksum-sha256 should fail
+test_put_object_with_mismatched_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: PutObject with mismatched --checksum-sha256 should fail${NC}"
+    
+    # Create test file
+    echo "Hello, Checksum Mismatch Test!" > "${CHECKSUM_TEST_DATA_DIR}/mismatch-test.txt"
+    
+    # Use a wrong checksum (different from actual content)
+    WRONG_CHECKSUM="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    echo "  Using wrong checksum: $WRONG_CHECKSUM"
+    
+    # Attempt upload with wrong checksum - this should fail
+    OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api put-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key mismatch-test.txt \
+        --body "${CHECKSUM_TEST_DATA_DIR}/mismatch-test.txt" \
+        --checksum-sha256 "${WRONG_CHECKSUM}" 2>&1)
+    
+    EXIT_CODE=$?
+    
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "${GREEN}✓ PutObject with mismatched checksum correctly rejected${NC}"
+        # Verify it's the right error (checksum mismatch, not other errors)
+        if echo "$OUTPUT" | grep -qi "checksum\|BadDigest\|InvalidDigest"; then
+            echo -e "${GREEN}✓ Error message indicates checksum mismatch${NC}"
+        else
+            echo "  Error output: $OUTPUT"
+        fi
+    else
+        echo -e "${RED}✗ PutObject with mismatched checksum should have failed but succeeded${NC}"
+        echo "  Output: $OUTPUT"
+        exit 1
+    fi
+    
+    # Verify object was NOT created
+    HEAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api head-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key mismatch-test.txt 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${GREEN}✓ Object was not created (as expected)${NC}"
+    else
+        echo -e "${RED}✗ Object should not have been created but exists${NC}"
+        exit 1
+    fi
+}
+
+# Test: Multipart upload with checksum-sha256
+test_multipart_upload_with_checksum_sha256() {
+    echo -e "\n${YELLOW}Test: Multipart upload with --checksum-sha256${NC}"
+    
+    # Create test file parts (each part must be at least 5MB for multipart, but we use smaller for testing)
+    PART1_CONTENT="This is part 1 of the multipart upload test with checksum."
+    PART2_CONTENT="This is part 2 of the multipart upload test with checksum."
+    
+    echo -n "$PART1_CONTENT" > "${CHECKSUM_TEST_DATA_DIR}/multipart-part1.txt"
+    echo -n "$PART2_CONTENT" > "${CHECKSUM_TEST_DATA_DIR}/multipart-part2.txt"
+    
+    # Calculate checksums for each part
+    PART1_HASH_HEX=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/multipart-part1.txt" | cut -d' ' -f1)
+    PART1_HASH_BASE64=$(echo -n "$PART1_HASH_HEX" | xxd -r -p | base64)
+    PART2_HASH_HEX=$(sha256sum "${CHECKSUM_TEST_DATA_DIR}/multipart-part2.txt" | cut -d' ' -f1)
+    PART2_HASH_BASE64=$(echo -n "$PART2_HASH_HEX" | xxd -r -p | base64)
+    
+    echo "  Part 1 SHA256: $PART1_HASH_BASE64"
+    echo "  Part 2 SHA256: $PART2_HASH_BASE64"
+    
+    # Initiate multipart upload
+    UPLOAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api create-multipart-upload \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to initiate multipart upload${NC}"
+        echo "$UPLOAD_OUTPUT"
+        exit 1
+    fi
+    
+    UPLOAD_ID=$(echo "$UPLOAD_OUTPUT" | grep -o '"UploadId": "[^"]*"' | cut -d'"' -f4)
+    echo "  Upload ID: $UPLOAD_ID"
+    
+    # Upload part 1 with checksum
+    PART1_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt \
+        --upload-id "$UPLOAD_ID" \
+        --part-number 1 \
+        --body "${CHECKSUM_TEST_DATA_DIR}/multipart-part1.txt" \
+        --checksum-sha256 "$PART1_HASH_BASE64" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to upload part 1 with checksum${NC}"
+        echo "$PART1_OUTPUT"
+        # Abort the upload
+        aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api abort-multipart-upload \
+            --bucket ${CHECKSUM_TEST_BUCKET} \
+            --key multipart-checksum-test.txt \
+            --upload-id "$UPLOAD_ID" 2>/dev/null
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Part 1 uploaded with checksum${NC}"
+    
+    PART1_ETAG=$(echo "$PART1_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['ETag'].strip('\"'))" 2>/dev/null || echo "$PART1_OUTPUT" | grep -o '"ETag": *"[^"]*"' | sed 's/.*: *"\([^"]*\)"/\1/' | tr -d '"')
+    
+    # Upload part 2 with checksum
+    PART2_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt \
+        --upload-id "$UPLOAD_ID" \
+        --part-number 2 \
+        --body "${CHECKSUM_TEST_DATA_DIR}/multipart-part2.txt" \
+        --checksum-sha256 "$PART2_HASH_BASE64" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to upload part 2 with checksum${NC}"
+        echo "$PART2_OUTPUT"
+        # Abort the upload
+        aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api abort-multipart-upload \
+            --bucket ${CHECKSUM_TEST_BUCKET} \
+            --key multipart-checksum-test.txt \
+            --upload-id "$UPLOAD_ID" 2>/dev/null
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Part 2 uploaded with checksum${NC}"
+    
+    PART2_ETAG=$(echo "$PART2_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['ETag'].strip('\"'))" 2>/dev/null || echo "$PART2_OUTPUT" | grep -o '"ETag": *"[^"]*"' | sed 's/.*: *"\([^"]*\)"/\1/' | tr -d '"')
+    
+    # Create JSON file for complete multipart upload
+    cat > "${CHECKSUM_TEST_DATA_DIR}/complete-multipart.json" << EOF
+{
+    "Parts": [
+        {"PartNumber": 1, "ETag": "$PART1_ETAG"},
+        {"PartNumber": 2, "ETag": "$PART2_ETAG"}
+    ]
+}
+EOF
+    
+    # Complete multipart upload
+    COMPLETE_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api complete-multipart-upload \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt \
+        --upload-id "$UPLOAD_ID" \
+        --multipart-upload file://"${CHECKSUM_TEST_DATA_DIR}/complete-multipart.json" 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to complete multipart upload${NC}"
+        echo "$COMPLETE_OUTPUT"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Multipart upload completed${NC}"
+    
+    # Verify the object exists and has checksum
+    HEAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api head-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt \
+        --checksum-mode ENABLED 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to head multipart object${NC}"
+        echo "$HEAD_OUTPUT"
+        exit 1
+    fi
+    
+    if echo "$HEAD_OUTPUT" | grep -qi "ChecksumSHA256"; then
+        echo -e "${GREEN}✓ Multipart object has ChecksumSHA256${NC}"
+        CHECKSUM=$(echo "$HEAD_OUTPUT" | grep -o '"ChecksumSHA256": "[^"]*"' | cut -d'"' -f4)
+        echo "  Final ChecksumSHA256: $CHECKSUM"
+    else
+        echo -e "${YELLOW}! ChecksumSHA256 not visible in head output${NC}"
+    fi
+    
+    # Verify content
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api get-object \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-checksum-test.txt \
+        "${CHECKSUM_TEST_DATA_DIR}/multipart-downloaded.txt" > /dev/null 2>&1
+    
+    EXPECTED_CONTENT="${PART1_CONTENT}${PART2_CONTENT}"
+    DOWNLOADED_CONTENT=$(cat "${CHECKSUM_TEST_DATA_DIR}/multipart-downloaded.txt")
+    
+    if [ "$EXPECTED_CONTENT" = "$DOWNLOADED_CONTENT" ]; then
+        echo -e "${GREEN}✓ Multipart upload content verified${NC}"
+    else
+        echo -e "${RED}✗ Multipart upload content mismatch${NC}"
+        exit 1
+    fi
+}
+
+# Test: Multipart upload with mismatched checksum should fail
+test_multipart_upload_with_mismatched_checksum() {
+    echo -e "\n${YELLOW}Test: Multipart upload part with mismatched checksum should fail${NC}"
+    
+    # Create test file
+    echo "Test content for multipart mismatch" > "${CHECKSUM_TEST_DATA_DIR}/multipart-mismatch.txt"
+    
+    # Use wrong checksum
+    WRONG_CHECKSUM="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+    
+    # Initiate multipart upload
+    UPLOAD_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api create-multipart-upload \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-mismatch-test.txt 2>&1)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to initiate multipart upload${NC}"
+        echo "$UPLOAD_OUTPUT"
+        exit 1
+    fi
+    
+    UPLOAD_ID=$(echo "$UPLOAD_OUTPUT" | grep -o '"UploadId": "[^"]*"' | cut -d'"' -f4)
+    
+    # Upload part with wrong checksum - should fail
+    PART_OUTPUT=$(aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api upload-part \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-mismatch-test.txt \
+        --upload-id "$UPLOAD_ID" \
+        --part-number 1 \
+        --body "${CHECKSUM_TEST_DATA_DIR}/multipart-mismatch.txt" \
+        --checksum-sha256 "$WRONG_CHECKSUM" 2>&1)
+    
+    EXIT_CODE=$?
+    
+    # Cleanup the upload regardless of result
+    aws --endpoint-url="${SERVER_ADDR}" --no-sign-request s3api abort-multipart-upload \
+        --bucket ${CHECKSUM_TEST_BUCKET} \
+        --key multipart-mismatch-test.txt \
+        --upload-id "$UPLOAD_ID" 2>/dev/null
+    
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "${GREEN}✓ Upload part with mismatched checksum correctly rejected${NC}"
+        if echo "$PART_OUTPUT" | grep -qi "checksum\|BadDigest\|InvalidDigest"; then
+            echo -e "${GREEN}✓ Error message indicates checksum mismatch${NC}"
+        fi
+    else
+        echo -e "${RED}✗ Upload part with mismatched checksum should have failed${NC}"
+        exit 1
+    fi
+}
+
+# Run all checksum tests
+run_checksum_tests() {
+    setup
+    setup_checksum_tests
+    
+    test_put_object_with_checksum_sha256
+    test_get_object_checksum_header
+    test_head_object_checksum
+    test_large_file_checksum
+    test_put_object_with_precalculated_checksum_sha256
+    test_put_object_with_mismatched_checksum_sha256
+    test_multipart_upload_with_checksum_sha256
+    test_multipart_upload_with_mismatched_checksum
+    
+    cleanup_checksum_tests
+    
+    echo -e "\n${GREEN}========================================${NC}"
+    echo -e "${GREEN}All checksum tests passed!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+}
+
+# Run tests if executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    run_checksum_tests
+fi

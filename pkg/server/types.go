@@ -82,8 +82,9 @@ type InitiateMultipartUploadResult struct {
 
 // Multipart represents a part in CompleteMultipartUpload request
 type Multipart struct {
-	PartNumber int    `xml:"PartNumber"`
-	ETag       string `xml:"ETag"`
+	PartNumber     int    `xml:"PartNumber"`
+	ETag           string `xml:"ETag"`
+	ChecksumSHA256 string `xml:"ChecksumSHA256,omitempty"`
 }
 
 // CompletedPart represents a part in ListParts response
@@ -101,11 +102,12 @@ type CompleteMultipartUpload struct {
 
 // CompleteMultipartUploadResult is the response for CompleteMultipartUpload operation
 type CompleteMultipartUploadResult struct {
-	XMLName  xml.Name `xml:"CompleteMultipartUploadResult"`
-	Location string   `xml:"Location"`
-	Bucket   string   `xml:"Bucket"`
-	Key      string   `xml:"Key"`
-	ETag     string   `xml:"ETag"`
+	XMLName        xml.Name `xml:"CompleteMultipartUploadResult"`
+	Location       string   `xml:"Location"`
+	Bucket         string   `xml:"Bucket"`
+	Key            string   `xml:"Key"`
+	ETag           string   `xml:"ETag"`
+	ChecksumSHA256 string   `xml:"ChecksumSHA256,omitempty"`
 }
 
 // Upload represents an upload in ListMultipartUploads response
