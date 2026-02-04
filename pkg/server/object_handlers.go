@@ -148,8 +148,18 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	srcBucket := parts[0]
 	srcKey := parts[1]
 
+	// Handle x-amz-metadata-directive header
+	// COPY (default): copy metadata from source object
+	// REPLACE: use metadata from request headers
+	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+	var metadata *storage.Metadata
+	if metadataDirective == "REPLACE" {
+		m := extractMetadata(r)
+		metadata = &m
+	}
+
 	// Perform copy
-	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey, metadata)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
