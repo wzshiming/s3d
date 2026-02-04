@@ -182,6 +182,9 @@ type objectMetadata struct {
 	// When set, the actual data is stored in .objects/{digest[:2]}/{digest}
 	// If Data is set (inline storage), Digest is empty
 	Digest string
+	// IsDir indicates if the original key had a trailing slash (S3 directory object)
+	// When true, the key should be reconstructed with a trailing slash
+	IsDir bool
 }
 
 // uploadMetadata represents multipart upload metadata

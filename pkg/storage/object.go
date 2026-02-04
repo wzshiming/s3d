@@ -109,6 +109,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	metadata := &objectMetadata{
 		ETag:     etag,
 		Metadata: userMetadata,
+		IsDir:    strings.HasSuffix(key, "/"),
 	}
 
 	// If file is small enough, embed it in metadata
@@ -245,10 +246,17 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		return file, info, nil
 	}
 
+	// Zero-byte object (including folder objects)
+	metaFileInfo, err := os.Stat(metaPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	info := &ObjectInfo{
 		Key:      key,
 		Size:     0,
 		ETag:     metadata.ETag,
+		ModTime:  metaFileInfo.ModTime(),
 		Metadata: metadata.Metadata,
 	}
 	return &inlineDataReader{bytes.NewReader([]byte{})}, info, nil
@@ -332,6 +340,17 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			}
 			objectKey = filepath.ToSlash(objectKey)
 
+			// Load metadata first to determine if this is a directory object
+			metadata, _ := loadObjectMetadata(path)
+			if metadata == nil {
+				return nil
+			}
+
+			// Reconstruct the original key with trailing slash for directory objects
+			if metadata.IsDir {
+				objectKey = objectKey + "/"
+			}
+
 			// Apply prefix filter
 			if prefix != "" && !strings.HasPrefix(objectKey, prefix) {
 				return nil
@@ -353,16 +372,13 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 				}
 			}
 
-			// Load metadata
-			metadata, _ := loadObjectMetadata(path)
-
 			var size int64
 
 			// Check if data is inline or in content-addressable storage
-			if metadata != nil && len(metadata.Data) > 0 {
+			if len(metadata.Data) > 0 {
 				// Data is inline
 				size = int64(len(metadata.Data))
-			} else if metadata != nil && metadata.Digest != "" {
+			} else if metadata.Digest != "" {
 				// Data is in content-addressable storage
 				objPath, err := s.objectPath(metadata.Digest)
 				if err != nil {
@@ -373,10 +389,8 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 					return fmt.Errorf("failed to stat content-addressed object for %s: %v", objectKey, err)
 				}
 				size = dataInfo.Size()
-			} else {
-				// No valid data reference - skip this object
-				return nil
 			}
+			// else: size is 0 (empty/zero-byte object, including folder objects)
 
 			// Always use meta file's ModTime
 			objects = append(objects, ObjectInfo{
@@ -487,10 +501,8 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 				return nil, err
 			}
 			size = fileInfo.Size()
-		} else {
-			// No valid data reference
-			return nil, ErrObjectNotFound
 		}
+		// else: size is 0 (zero-byte object, including folder objects)
 
 		// Always use meta file's ModTime
 		metaFileInfo, err := os.Stat(dstMetaPath)
@@ -514,6 +526,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:     srcMetadata.ETag,
 			Data:     make([]byte, len(srcMetadata.Data)),
 			Metadata: srcMetadata.Metadata,
+			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
 
@@ -552,6 +565,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 			ETag:     srcMetadata.ETag,
 			Digest:   srcMetadata.Digest,
 			Metadata: srcMetadata.Metadata,
+			IsDir:    strings.HasSuffix(dstKey, "/"),
 		}
 
 		if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
@@ -592,8 +606,35 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (*Obje
 		}, nil
 	}
 
-	// No digest and no inline data - source is corrupted or invalid
-	return nil, ErrObjectNotFound
+	// Zero-byte object (no digest and no inline data)
+	dstMetadata := &objectMetadata{
+		ETag:     srcMetadata.ETag,
+		Metadata: srcMetadata.Metadata,
+		IsDir:    strings.HasSuffix(dstKey, "/"),
+	}
+
+	if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
+		return nil, err
+	}
+
+	// Decrement refcount for old destination if it had a digest
+	if existingDstMetadata != nil && existingDstMetadata.Digest != "" {
+		s.decrementRefCount(existingDstMetadata.Digest)
+	}
+
+	// Always use meta file's ModTime
+	metaFileInfo, err := os.Stat(dstMetaPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ObjectInfo{
+		Key:      dstKey,
+		Size:     0,
+		ETag:     srcMetadata.ETag,
+		ModTime:  metaFileInfo.ModTime(),
+		Metadata: srcMetadata.Metadata,
+	}, nil
 }
 
 // RenameObject renames an object within the same bucket
