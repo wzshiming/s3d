@@ -56,6 +56,10 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key = parts[1]
 	}
 
+	// Normalize key: trim leading slashes (e.g., from URLs like /bucket//key or /bucket/)
+	// This handles cases where s3fs-fuse requests /bucket// to access the root directory
+	key = strings.TrimPrefix(key, "/")
+
 	query := r.URL.Query()
 	if key == "" {
 		switch r.Method {

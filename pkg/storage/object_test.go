@@ -169,7 +169,7 @@ func TestCopyObject(t *testing.T) {
 	}
 
 	// Copy object
-	objInfo, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
+	objInfo, err := store.CopyObject(srcBucket, srcKey, dstBucket, dstKey, nil)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestCopyNonexistentObject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = store.CopyObject("src", "nonexistent.txt", "dst", "copy.txt")
+	_, err = store.CopyObject("src", "nonexistent.txt", "dst", "copy.txt", nil)
 	if err != ErrObjectNotFound {
 		t.Fatalf("Expected ErrObjectNotFound, got %v", err)
 	}
@@ -550,7 +550,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 
 	// Test 4: Copy small file should maintain inline storage
 	copiedKey := "copied-small.txt"
-	objInfoCopy, err := store.CopyObject(bucketName, smallKey, bucketName, copiedKey)
+	objInfoCopy, err := store.CopyObject(bucketName, smallKey, bucketName, copiedKey, nil)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
@@ -782,7 +782,7 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		}
 
 		// Copy - should detect same content and be compatible
-		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey, nil)
 		if err != nil {
 			t.Fatalf("CopyObject to existing destination with same content failed: %v", err)
 		}
@@ -824,7 +824,7 @@ func TestCopyObjectDuplicateCompatibility(t *testing.T) {
 		}
 
 		// Copy - should overwrite destination
-		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey)
+		objInfo, err := store.CopyObject(bucketName, srcKey, bucketName, dstKey, nil)
 		if err != nil {
 			t.Fatalf("CopyObject failed: %v", err)
 		}
@@ -1053,7 +1053,7 @@ func TestContentAddressableStorageDeduplication(t *testing.T) {
 
 	// Test copy also uses the same content-addressed object
 	key3 := "file3.txt"
-	_, err = store.CopyObject(bucketName, key1, bucketName, key3)
+	_, err = store.CopyObject(bucketName, key1, bucketName, key3, nil)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
@@ -1387,7 +1387,7 @@ func TestReferenceCountingWithCopy(t *testing.T) {
 
 	// Copy to another key
 	key2 := "copy.txt"
-	_, err = store.CopyObject(bucketName, key1, bucketName, key2)
+	_, err = store.CopyObject(bucketName, key1, bucketName, key2, nil)
 	if err != nil {
 		t.Fatalf("CopyObject failed: %v", err)
 	}
@@ -1566,7 +1566,7 @@ func TestFolderObjects(t *testing.T) {
 		}
 
 		// Copy folder object
-		copyInfo, err := store.CopyObject(bucketName, srcFolder, bucketName, dstFolder)
+		copyInfo, err := store.CopyObject(bucketName, srcFolder, bucketName, dstFolder, nil)
 		if err != nil {
 			t.Fatalf("CopyObject folder failed: %v", err)
 		}

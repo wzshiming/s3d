@@ -103,5 +103,9 @@ func (s *S3Handler) handleHeadBucket(w http.ResponseWriter, r *http.Request, buc
 	}
 
 	s.setHeaders(w, r)
+	// Return directory-like headers for s3fs-fuse compatibility
+	// This helps s3fs understand the bucket root as a directory
+	w.Header().Set("Content-Type", "application/x-directory")
+	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusOK)
 }

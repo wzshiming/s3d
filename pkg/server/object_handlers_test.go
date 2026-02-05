@@ -1306,3 +1306,147 @@ func TestPutObjectWithChecksumAlgorithm(t *testing.T) {
 		Key:    aws.String(objectKey),
 	})
 }
+
+// TestCopyObjectMetadataDirective tests the x-amz-metadata-directive header
+func TestCopyObjectMetadataDirective(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-metadata-directive-bucket"
+	srcKey := "source.txt"
+	content := "Test content for metadata directive"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create source object with metadata
+	srcMetadata := map[string]string{
+		"author":  "original-author",
+		"version": "1.0",
+	}
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucketName),
+		Key:         aws.String(srcKey),
+		Body:        strings.NewReader(content),
+		ContentType: aws.String("text/plain"),
+		Metadata:    srcMetadata,
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	t.Run("COPY_directive_copies_metadata", func(t *testing.T) {
+		dstKey := "copy-metadata.txt"
+		copySource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+
+		_, err := ts.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            aws.String(bucketName),
+			Key:               aws.String(dstKey),
+			CopySource:        aws.String(copySource),
+			MetadataDirective: types.MetadataDirectiveCopy,
+		})
+		if err != nil {
+			t.Fatalf("CopyObject with COPY directive failed: %v", err)
+		}
+
+		// Verify destination object has source metadata
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		if output.Metadata == nil {
+			t.Fatal("Expected metadata in destination object")
+		}
+		if output.Metadata["author"] != "original-author" {
+			t.Errorf("Expected author='original-author', got %q", output.Metadata["author"])
+		}
+		if output.Metadata["version"] != "1.0" {
+			t.Errorf("Expected version='1.0', got %q", output.Metadata["version"])
+		}
+	})
+
+	t.Run("REPLACE_directive_uses_new_metadata", func(t *testing.T) {
+		dstKey := "replace-metadata.txt"
+		copySource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+		newMetadata := map[string]string{
+			"author":  "new-author",
+			"version": "2.0",
+			"extra":   "new-field",
+		}
+
+		_, err := ts.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            aws.String(bucketName),
+			Key:               aws.String(dstKey),
+			CopySource:        aws.String(copySource),
+			MetadataDirective: types.MetadataDirectiveReplace,
+			Metadata:          newMetadata,
+			ContentType:       aws.String("application/json"),
+		})
+		if err != nil {
+			t.Fatalf("CopyObject with REPLACE directive failed: %v", err)
+		}
+
+		// Verify destination object has new metadata
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		if output.Metadata == nil {
+			t.Fatal("Expected metadata in destination object")
+		}
+		if output.Metadata["author"] != "new-author" {
+			t.Errorf("Expected author='new-author', got %q", output.Metadata["author"])
+		}
+		if output.Metadata["version"] != "2.0" {
+			t.Errorf("Expected version='2.0', got %q", output.Metadata["version"])
+		}
+		if output.Metadata["extra"] != "new-field" {
+			t.Errorf("Expected extra='new-field', got %q", output.Metadata["extra"])
+		}
+		if output.ContentType != nil && *output.ContentType != "application/json" {
+			t.Errorf("Expected content-type='application/json', got %q", *output.ContentType)
+		}
+	})
+
+	t.Run("Default_copies_metadata_like_COPY", func(t *testing.T) {
+		dstKey := "default-metadata.txt"
+		copySource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+
+		// No MetadataDirective specified - should behave like COPY
+		_, err := ts.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(dstKey),
+			CopySource: aws.String(copySource),
+		})
+		if err != nil {
+			t.Fatalf("CopyObject without directive failed: %v", err)
+		}
+
+		// Verify destination object has source metadata
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		if output.Metadata == nil {
+			t.Fatal("Expected metadata in destination object")
+		}
+		if output.Metadata["author"] != "original-author" {
+			t.Errorf("Expected author='original-author', got %q", output.Metadata["author"])
+		}
+	})
+}

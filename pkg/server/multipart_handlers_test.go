@@ -855,3 +855,176 @@ func TestListPartsPagination(t *testing.T) {
 		}
 	})
 }
+
+// TestUploadPartCopyWithRange tests the x-amz-copy-source-range header
+func TestUploadPartCopyWithRange(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-partcopy-range-bucket"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create a source object with known content
+	srcKey := "source-for-range.txt"
+	srcContent := "0123456789ABCDEFGHIJ" // 20 bytes: positions 0-19
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(srcKey),
+		Body:   strings.NewReader(srcContent),
+	})
+	if err != nil {
+		t.Fatalf("PutObject for source failed: %v", err)
+	}
+
+	t.Run("CopyPartWithByteRange", func(t *testing.T) {
+		dstKey := "dest-from-range.txt"
+
+		// Initiate multipart upload
+		initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("CreateMultipartUpload failed: %v", err)
+		}
+		uploadID := *initOutput.UploadId
+
+		// Copy part 1: bytes 0-4 (should be "01234")
+		copySource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+		part1Output, err := ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:          aws.String(bucketName),
+			Key:             aws.String(dstKey),
+			UploadId:        aws.String(uploadID),
+			PartNumber:      aws.Int32(1),
+			CopySource:      aws.String(copySource),
+			CopySourceRange: aws.String("bytes=0-4"),
+		})
+		if err != nil {
+			t.Fatalf("UploadPartCopy part 1 with range failed: %v", err)
+		}
+
+		// Copy part 2: bytes 10-14 (should be "ABCDE")
+		part2Output, err := ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:          aws.String(bucketName),
+			Key:             aws.String(dstKey),
+			UploadId:        aws.String(uploadID),
+			PartNumber:      aws.Int32(2),
+			CopySource:      aws.String(copySource),
+			CopySourceRange: aws.String("bytes=10-14"),
+		})
+		if err != nil {
+			t.Fatalf("UploadPartCopy part 2 with range failed: %v", err)
+		}
+
+		// Complete multipart upload
+		_, err = ts.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String(dstKey),
+			UploadId: aws.String(uploadID),
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						PartNumber: aws.Int32(1),
+						ETag:       part1Output.CopyPartResult.ETag,
+					},
+					{
+						PartNumber: aws.Int32(2),
+						ETag:       part2Output.CopyPartResult.ETag,
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("CompleteMultipartUpload failed: %v", err)
+		}
+
+		// Verify the resulting object content
+		getOutput, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer getOutput.Body.Close()
+
+		data, err := io.ReadAll(getOutput.Body)
+		if err != nil {
+			t.Fatalf("Failed to read object body: %v", err)
+		}
+
+		expectedContent := "01234ABCDE" // bytes 0-4 + bytes 10-14
+		if string(data) != expectedContent {
+			t.Errorf("Expected content %q, got %q", expectedContent, string(data))
+		}
+	})
+
+	t.Run("CopyPartFullObject", func(t *testing.T) {
+		dstKey := "dest-full-copy.txt"
+
+		// Initiate multipart upload
+		initOutput, err := ts.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("CreateMultipartUpload failed: %v", err)
+		}
+		uploadID := *initOutput.UploadId
+
+		// Copy entire source object (no range specified)
+		copySource := fmt.Sprintf("%s/%s", bucketName, srcKey)
+		part1Output, err := ts.client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String(dstKey),
+			UploadId:   aws.String(uploadID),
+			PartNumber: aws.Int32(1),
+			CopySource: aws.String(copySource),
+		})
+		if err != nil {
+			t.Fatalf("UploadPartCopy without range failed: %v", err)
+		}
+
+		// Complete multipart upload
+		_, err = ts.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String(dstKey),
+			UploadId: aws.String(uploadID),
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						PartNumber: aws.Int32(1),
+						ETag:       part1Output.CopyPartResult.ETag,
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("CompleteMultipartUpload failed: %v", err)
+		}
+
+		// Verify the resulting object content matches source
+		getOutput, err := ts.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(dstKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer getOutput.Body.Close()
+
+		data, err := io.ReadAll(getOutput.Body)
+		if err != nil {
+			t.Fatalf("Failed to read object body: %v", err)
+		}
+
+		if string(data) != srcContent {
+			t.Errorf("Expected content %q, got %q", srcContent, string(data))
+		}
+	})
+}

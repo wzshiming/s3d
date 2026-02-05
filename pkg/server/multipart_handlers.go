@@ -108,8 +108,19 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	// Parse x-amz-copy-source-range header (format: bytes=start-end)
+	var startByte, endByte int64 = -1, -1
+	copySourceRange := r.Header.Get("x-amz-copy-source-range")
+	if copySourceRange != "" {
+		startByte, endByte, err = parseByteRange(copySourceRange)
+		if err != nil {
+			s.errorResponse(w, r, "InvalidArgument", "Invalid copy source range format", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Perform copy to part
-	objInfo, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey)
+	objInfo, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey, startByte, endByte)
 	if err != nil {
 		switch err {
 		case storage.ErrBucketNotFound:
@@ -120,6 +131,8 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
 		case storage.ErrInvalidPartNumber:
 			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
+		case storage.ErrInvalidRange:
+			s.errorResponse(w, r, "InvalidRange", "The requested range is not valid", http.StatusRequestedRangeNotSatisfiable)
 		default:
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
@@ -132,6 +145,32 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)
+}
+
+// parseByteRange parses a byte range string in the format "bytes=start-end"
+// Returns start and end byte positions, or an error if the format is invalid
+func parseByteRange(rangeHeader string) (int64, int64, error) {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return -1, -1, fmt.Errorf("invalid range format")
+	}
+
+	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
+	rangeParts := strings.SplitN(rangeSpec, "-", 2)
+	if len(rangeParts) != 2 {
+		return -1, -1, fmt.Errorf("invalid range format")
+	}
+
+	startByte, err := strconv.ParseInt(rangeParts[0], 10, 64)
+	if err != nil {
+		return -1, -1, fmt.Errorf("invalid start byte")
+	}
+
+	endByte, err := strconv.ParseInt(rangeParts[1], 10, 64)
+	if err != nil {
+		return -1, -1, fmt.Errorf("invalid end byte")
+	}
+
+	return startByte, endByte, nil
 }
 
 // handleCompleteMultipartUpload handles CompleteMultipartUpload operation
