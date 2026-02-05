@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  compatibility-tests:
+  mint-compatibility-tests:
     name: Mint Compatibility Tests
     runs-on: ubuntu-latest
     steps:
@@ -47,6 +47,50 @@ jobs:
             echo "✅ Results match the baseline file."
           else
             echo ""
-            echo "⚠️ Results differ from baseline. To update, run: make update-compatibility"
+            echo "⚠️ Results differ from baseline. To update, run: make update-mint-compatibility"
+            exit 1
+          fi
+
+  s3tests-compatibility-tests:
+    name: ceph/s3-tests Compatibility Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run s3-tests compatibility tests
+        id: s3tests
+        continue-on-error: true
+        run: |
+          ./test/compatibility/s3tests_test.sh
+
+      - name: Upload s3-tests logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3tests-logs
+          path: test/compatibility/s3tests-logs/
+          retention-days: 2
+
+      - name: Parse test results
+        id: parse
+        run: |
+          ./test/compatibility/s3tests_results_to_readme.sh > ./test/compatibility/s3tests_compatibility.new.md
+          cat ./test/compatibility/s3tests_compatibility.new.md >> $GITHUB_STEP_SUMMARY
+          if diff ./test/compatibility/s3tests_compatibility.new.md ./test/compatibility/s3tests_compatibility.md; then
+            echo "✅ Results match the baseline file."
+          else
+            echo ""
+            echo "⚠️ Results differ from baseline. To update, run: make update-s3tests-compatibility"
             exit 1
           fi

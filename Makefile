@@ -1,4 +1,4 @@
-.PHONY: build test test-integration test-e2e
+.PHONY: build test test-integration test-e2e test-mint-compatibility test-s3tests-compatibility update-mint-compatibility update-s3tests-compatibility
 
 # Build the server binary
 build:
@@ -23,3 +23,11 @@ test-mint-compatibility:
 # Update mint_compatibility.md from the latest test results
 update-mint-compatibility:
 	./test/compatibility/mint_results_to_readme.sh > ./test/compatibility/mint_compatibility.md
+
+# Run compatibility tests with ceph/s3-tests
+test-s3tests-compatibility:
+	./test/compatibility/s3tests_test.sh
+
+# Update s3tests_compatibility.md from the latest test results
+update-s3tests-compatibility:
+	./test/compatibility/s3tests_results_to_readme.sh > ./test/compatibility/s3tests_compatibility.md

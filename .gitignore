@@ -40,3 +40,9 @@ data/
 # Mint compatibility test results (generated)
 test/compatibility/mint_results.json
 test/compatibility/mint_compatibility.new.md
+test/compatibility/mint-logs/
+
+# ceph/s3-tests compatibility test results (generated)
+test/compatibility/s3-tests/
+test/compatibility/s3tests-logs/
+test/compatibility/s3tests_compatibility.new.md
