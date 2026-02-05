@@ -46,3 +46,8 @@ test/compatibility/mint-logs/
 test/compatibility/s3-tests/
 test/compatibility/s3tests-logs/
 test/compatibility/s3tests_compatibility.new.md
+
+# pjd/pjdfstest compatibility test results (generated)
+test/compatibility/pjdfstest/
+test/compatibility/pjdfstest-logs/
+test/compatibility/pjdfstest_compatibility.new.md
