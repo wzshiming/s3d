@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 export SERVER_PORT="${SERVER_PORT:-9000}"
-export SERVER_DATA_DIR=$(mktemp -d)
+export SERVER_DATA_DIR="$(mktemp -d)"
 export SERVER_PID=""
 # Main credentials (from ceph/s3-tests sample config)
 export ACCESS_KEY="0555b35654ad1656d804"
@@ -63,11 +63,10 @@ setup() {
     # Build the server
     echo -e "\n${YELLOW}Building server...${NC}"
     cd "${REPO_ROOT}"
-    go build -o ./s3d ./cmd/s3d
-    if [ $? -ne 0 ]; then
+    go build -o ./s3d ./cmd/s3d || {
         echo -e "${RED}Failed to build server${NC}"
         exit 1
-    fi
+    }
     echo -e "${GREEN}Server built successfully${NC}"
 
     # Start the server with authentication, binding to all interfaces

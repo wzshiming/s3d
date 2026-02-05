@@ -50,115 +50,119 @@ echo "fail_count=$((FAILURES + ERRORS))" >> "${GITHUB_OUTPUT:-/dev/null}"
 echo "## Detailed Results"
 echo ""
 
-# Parse individual test cases from JUnit XML
-# Extract passed tests
-echo "### ✅ Passed Tests"
-echo ""
-echo "| Test Name |"
-echo "|-----------|"
-
-# Get passed tests (testcases without failure/error/skipped children)
-grep -oP '<testcase[^>]*name="\K[^"]+(?="[^>]*/>)' "$RESULTS_FILE" 2>/dev/null | while read -r test_name; do
-    # Normalize test name for display
-    normalized_name=$(echo "$test_name" | sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<UUID>/g')
-    normalized_name=$(echo "$normalized_name" | sed -E 's/s3d-test-[a-z0-9]+-[a-z0-9]+/s3d-test-<RANDOM>/g')
-    echo "| \`${normalized_name}\` |"
-done || echo "| (none) |"
-
-echo ""
-echo "### ❌ Failed Tests"
-echo ""
-echo "| Test Name | Error Message |"
-echo "|-----------|---------------|"
-
-# Parse failed tests - these are testcases with <failure> children
-# Use xmllint or grep to extract failure information
+# Parse all test cases using Python for consistency
 if command -v python3 &> /dev/null; then
     python3 << 'PYTHON_SCRIPT' - "$RESULTS_FILE"
 import sys
 import xml.etree.ElementTree as ET
+import re
+
+def normalize_name(name):
+    """Normalize test names by removing UUIDs and random suffixes."""
+    name = re.sub(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<UUID>', name)
+    name = re.sub(r's3d-test-[a-z0-9]+-[a-z0-9]+', 's3d-test-<RANDOM>', name)
+    return name
+
+def normalize_message(message, max_length=100):
+    """Normalize and truncate error messages."""
+    if not message:
+        return ''
+    message = message.replace('\n', ' ').replace('|', '\\|')
+    message = re.sub(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<UUID>', message)
+    message = re.sub(r's3d-test-[a-z0-9]+-[a-z0-9]+', 's3d-test-<RANDOM>', message)
+    if len(message) > max_length:
+        return message[:max_length] + '...'
+    return message
 
 results_file = sys.argv[1]
 try:
     tree = ET.parse(results_file)
     root = tree.getroot()
     
-    found_failures = False
+    passed = []
+    failed = []
+    skipped = []
+    
     for testcase in root.iter('testcase'):
+        name = testcase.get('name', 'Unknown')
+        normalized = normalize_name(name)
+        
         failure = testcase.find('failure')
         error = testcase.find('error')
+        skip = testcase.find('skipped')
         
-        if failure is not None or error is not None:
-            found_failures = True
-            name = testcase.get('name', 'Unknown')
-            # Normalize the name
-            import re
-            name = re.sub(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<UUID>', name)
-            name = re.sub(r's3d-test-[a-z0-9]+-[a-z0-9]+', 's3d-test-<RANDOM>', name)
-            
-            elem = failure if failure is not None else error
-            message = elem.get('message', '')[:100] if elem.get('message') else ''
-            # Clean up message
-            message = message.replace('\n', ' ').replace('|', '\\|')
-            message = re.sub(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<UUID>', message)
-            message = re.sub(r's3d-test-[a-z0-9]+-[a-z0-9]+', 's3d-test-<RANDOM>', message)
-            
-            print(f"| `{name}` | {message} |")
+        if failure is not None:
+            message = normalize_message(failure.get('message', ''))
+            failed.append((normalized, message))
+        elif error is not None:
+            message = normalize_message(error.get('message', ''))
+            failed.append((normalized, message))
+        elif skip is not None:
+            reason = normalize_message(skip.get('message', skip.text or ''))
+            skipped.append((normalized, reason))
+        else:
+            passed.append(normalized)
     
-    if not found_failures:
+    # Print passed tests
+    print("### ✅ Passed Tests")
+    print("")
+    print("| Test Name |")
+    print("|-----------|")
+    if passed:
+        for name in passed:
+            print(f"| `{name}` |")
+    else:
+        print("| (none) |")
+    
+    print("")
+    
+    # Print failed tests
+    print("### ❌ Failed Tests")
+    print("")
+    print("| Test Name | Error Message |")
+    print("|-----------|---------------|")
+    if failed:
+        for name, message in failed:
+            print(f"| `{name}` | {message} |")
+    else:
         print("| (none) | |")
+    
+    print("")
+    
+    # Print skipped tests
+    print("### ⏭️ Skipped Tests")
+    print("")
+    print("| Test Name | Reason |")
+    print("|-----------|--------|")
+    if skipped:
+        for name, reason in skipped:
+            print(f"| `{name}` | {reason} |")
+    else:
+        print("| (none) | |")
+
 except Exception as e:
-    print(f"| Error parsing results: {e} | |")
+    print(f"Error parsing results: {e}")
+    sys.exit(1)
 PYTHON_SCRIPT
 else
-    # Fallback to grep-based parsing
-    grep -zoP '<testcase[^>]*name="[^"]*"[^>]*>.*?<failure[^>]*message="[^"]*"' "$RESULTS_FILE" 2>/dev/null | \
-        tr '\0' '\n' | \
-        sed -n 's/.*name="\([^"]*\)".*message="\([^"]*\)".*/| `\1` | \2 |/p' || echo "| (none) | |"
-fi
-
-echo ""
-echo "### ⏭️ Skipped Tests"
-echo ""
-echo "| Test Name | Reason |"
-echo "|-----------|--------|"
-
-# Parse skipped tests
-if command -v python3 &> /dev/null; then
-    python3 << 'PYTHON_SCRIPT' - "$RESULTS_FILE"
-import sys
-import xml.etree.ElementTree as ET
-
-results_file = sys.argv[1]
-try:
-    tree = ET.parse(results_file)
-    root = tree.getroot()
-    
-    found_skipped = False
-    for testcase in root.iter('testcase'):
-        skipped = testcase.find('skipped')
-        
-        if skipped is not None:
-            found_skipped = True
-            name = testcase.get('name', 'Unknown')
-            # Normalize the name
-            import re
-            name = re.sub(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<UUID>', name)
-            name = re.sub(r's3d-test-[a-z0-9]+-[a-z0-9]+', 's3d-test-<RANDOM>', name)
-            
-            message = skipped.get('message', skipped.text or '')[:100] if skipped.get('message') or skipped.text else ''
-            # Clean up message
-            message = message.replace('\n', ' ').replace('|', '\\|')
-            
-            print(f"| `{name}` | {message} |")
-    
-    if not found_skipped:
-        print("| (none) | |")
-except Exception as e:
-    print(f"| Error parsing results: {e} | |")
-PYTHON_SCRIPT
-else
-    echo "| (none) | |"
+    # Fallback: basic output when Python is not available
+    echo "### ✅ Passed Tests"
+    echo ""
+    echo "| Test Name |"
+    echo "|-----------|"
+    echo "| Python required for detailed parsing |"
+    echo ""
+    echo "### ❌ Failed Tests"
+    echo ""
+    echo "| Test Name | Error Message |"
+    echo "|-----------|---------------|"
+    echo "| Python required for detailed parsing | |"
+    echo ""
+    echo "### ⏭️ Skipped Tests"
+    echo ""
+    echo "| Test Name | Reason |"
+    echo "|-----------|--------|"
+    echo "| Python required for detailed parsing | |"
 fi
 
 echo ""
