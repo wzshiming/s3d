@@ -36,3 +36,7 @@ go.work.sum
 
 # Data directory
 data/
+
+# Mint compatibility test results (generated)
+test/compatibility/mint_results.json
+test/compatibility/mint_compatibility.new.md

@@ -1,0 +1,52 @@
+name: Compatibility Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility-tests:
+    name: Mint Compatibility Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run mint compatibility tests
+        id: mint
+        continue-on-error: true
+        run: |
+          ./test/compatibility/mint_test.sh
+
+      - name: Upload mint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mint-logs
+          path: mint-logs/
+          retention-days: 2
+
+      - name: Parse test results
+        id: parse
+        run: |
+          ./test/compatibility/mint_results_to_readme.sh > ./test/compatibility/mint_compatibility.new.md
+          cat ./test/compatibility/mint_compatibility.new.md >> $GITHUB_STEP_SUMMARY
+          if diff ./test/compatibility/mint_compatibility.new.md ./test/compatibility/mint_compatibility.md; then
+            echo "✅ Results match the baseline file."
+          else
+            echo ""
+            echo "⚠️ Results differ from baseline. To update, run: make update-compatibility"
+            exit 1
+          fi
