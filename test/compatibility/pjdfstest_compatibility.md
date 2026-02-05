@@ -7,18 +7,19 @@ Tests are run against s3d via s3fs-fuse mount.
 
 | Status | Count |
 |--------|-------|
-| ✅ PASS | 1351 |
-| ❌ FAIL | 302 |
+| ✅ PASS | 281 |
+| ❌ FAIL | 60 |
 | ⏭️ SKIP | 0 |
-| 📊 TOTAL | 1653 |
+| 📊 TOTAL | 341 |
 
 ## Test Categories
 
-| Category | Passed | Failed | Total |
-|----------|--------|--------|-------|
-| chflags | 796 | 174 | 970 |
-| chmod | 1009 | 300 | 1309 |
-| chown | 789 | 242 | 1031 |
+Tests were run from the following pjdfstest categories:
+
+- chflags
+- chmod
+
+(Note: Per-category counts are not tracked as pjdfstest runs tests across categories)
 
 ## Detailed Results
 
@@ -86,151 +87,10 @@ Tests are run against s3d via s3fs-fuse mount.
 | `tried 'stat pjdfstest_<HASH> mode', expected 01640, got 0777` | |
 | `tried 'stat pjdfstest_<HASH> mode', expected 01644, got 0777` | |
 | `tried 'stat pjdfstest_<HASH> mode', expected 01640, got 0777` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65532,65531, got 0777,65532,65531` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),0,0, got 0777,0,0` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65532, got 0777,65534,65532` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 0555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65532, got 0777,65534,65532` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'stat pjdfstest_<HASH> mode,uid,gid', expected (06555|0555),65534,65533, got 0777,65534,65533` | |
-| `tried 'lstat pjdfstest_<HASH> mode,uid,gid', expected 06555,65534,65533, got 0777,65534,65533` | |
-| `# TODO Linux doesn't clear the SGID/SUID bits for directories, despite the description noted` | |
-| ... and 102 more | |
 
 ### ✅ Passed Tests
 
-Total passed: 1351
+Total passed: 281
 
 (Detailed list omitted due to volume - see test logs for full details)
 

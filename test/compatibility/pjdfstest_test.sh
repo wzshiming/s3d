@@ -224,11 +224,9 @@ run_pjdfstest() {
     
     # Run tests with prove (TAP harness)
     # Use sudo since pjdfstest requires root for some tests
+    # -r for recursive, -v for verbose TAP output
     # Continue on error to capture all results
     sudo prove -rv "${PJDFSTEST_DIR}/tests" 2>&1 | tee "${PJDFSTEST_LOG_DIR}/test_output.log" || true
-    
-    # Also run with --formatter to get TAP output
-    sudo prove -v "${PJDFSTEST_DIR}/tests" 2>&1 | tee "${PJDFSTEST_LOG_DIR}/tap_output.log" || true
     
     echo -e "\n${YELLOW}pjdfstest completed${NC}"
 }
@@ -246,10 +244,10 @@ parse_results() {
     echo -e "${YELLOW}pjd/pjdfstest Results${NC}"
     echo -e "${YELLOW}========================================${NC}"
 
-    # Count results from TAP output
-    local pass_count=$(grep -c '^\s*ok ' "$log_file" 2>/dev/null || echo "0")
-    local fail_count=$(grep -c '^\s*not ok ' "$log_file" 2>/dev/null || echo "0")
-    local skip_count=$(grep -c '# skip' "$log_file" 2>/dev/null || echo "0")
+    # Count results from TAP output (using same pattern as pjdfstest_results_to_readme.sh)
+    local pass_count=$(grep -cE '^ok [0-9]' "$log_file" 2>/dev/null || echo "0")
+    local fail_count=$(grep -cE '^not ok [0-9]' "$log_file" 2>/dev/null || echo "0")
+    local skip_count=$(grep -cE '# [Ss]kip' "$log_file" 2>/dev/null || echo "0")
 
     echo -e "\n${GREEN}PASSED: ${pass_count}${NC}"
     echo -e "${RED}FAILED: ${fail_count}${NC}"

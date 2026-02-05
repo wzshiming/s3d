@@ -51,23 +51,19 @@ echo ""
 
 # Get unique test categories from test file paths
 # Format: /path/to/pjdfstest/tests/chmod/00.t
+# Show categories that were tested (extracted from the log)
 CATEGORIES=$(grep -oE 'tests/[^/]+/' "$LOG_FILE" 2>/dev/null | sort -u | sed 's|tests/||g' | sed 's|/||g' || true)
 
 if [ -n "$CATEGORIES" ]; then
-    echo "| Category | Passed | Failed | Total |"
-    echo "|----------|--------|--------|-------|"
-    
+    echo "Tests were run from the following pjdfstest categories:"
+    echo ""
     while IFS= read -r category; do
         if [ -n "$category" ]; then
-            # Count tests in this category by looking at test file lines
-            cat_pass=$(grep -E "tests/${category}/" "$LOG_FILE" -A 1000 2>/dev/null | grep -cE '^ok [0-9]' 2>/dev/null || echo "0")
-            cat_fail=$(grep -E "tests/${category}/" "$LOG_FILE" -A 1000 2>/dev/null | grep -cE '^not ok [0-9]' 2>/dev/null || echo "0")
-            cat_total=$((cat_pass + cat_fail))
-            if [ "$cat_total" -gt 0 ]; then
-                echo "| $category | $cat_pass | $cat_fail | $cat_total |"
-            fi
+            echo "- $category"
         fi
     done <<< "$CATEGORIES"
+    echo ""
+    echo "(Note: Per-category counts are not tracked as pjdfstest runs tests across categories)"
     echo ""
 else
     echo "(No category information available)"
