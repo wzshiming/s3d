@@ -135,7 +135,7 @@ test_auth_wrong_credentials() {
     export AWS_SECRET_ACCESS_KEY="wrong-secret-key"
     
     # This should fail with authentication error
-    if aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls 2>&1 | grep -q "403\|Forbidden\|SignatureDoesNotMatch\|InvalidAccessKeyId"; then
+    if aws --endpoint-url="${AUTH_SERVER_ADDR}" s3 ls 2>&1 | grep -q "403\|Forbidden\|XAmzContentSHA256Mismatch\|InvalidAccessKeyId"; then
         echo -e "${GREEN}✓ Request correctly rejected with wrong credentials${NC}"
     else
         # Restore credentials before exiting

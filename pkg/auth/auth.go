@@ -196,7 +196,7 @@ func (a *AWS4Authenticator) authenticateV4Query(r *http.Request) (string, error)
 	}
 
 	if signature != expectedSignature {
-		return "", NewAuthError("SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided")
+		return "", NewAuthError("XAmzContentSHA256Mismatch", "The request signature we calculated does not match the signature you provided")
 	}
 
 	return accessKeyID, nil
@@ -251,7 +251,7 @@ func (a *AWS4Authenticator) authenticateV4Header(r *http.Request, authHeader str
 	}
 
 	if signature != expectedSignature {
-		return "", NewAuthError("SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided")
+		return "", NewAuthError("XAmzContentSHA256Mismatch", "The request signature we calculated does not match the signature you provided")
 	}
 
 	return accessKeyID, nil
