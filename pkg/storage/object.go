@@ -556,7 +556,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Key:            dstKey,
 			Size:           size,
 			ETag:           srcMetadata.ETag,
-			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ChecksumSHA256: srcMetadata.ChecksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       existingDstMetadata.Metadata,
 		}, nil
@@ -566,10 +566,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 	if len(srcMetadata.Data) > 0 {
 		// Data is inline - copy directly
 		dstMetadata := &objectMetadata{
-			ETag:     srcMetadata.ETag,
-			Data:     make([]byte, len(srcMetadata.Data)),
-			Metadata: metadataToUse,
-			IsDir:    strings.HasSuffix(dstKey, "/"),
+			ETag:           srcMetadata.ETag,
+			ChecksumSHA256: srcMetadata.ChecksumSHA256,
+			Data:           make([]byte, len(srcMetadata.Data)),
+			Metadata:       metadataToUse,
+			IsDir:          strings.HasSuffix(dstKey, "/"),
 		}
 		copy(dstMetadata.Data, srcMetadata.Data)
 
@@ -592,7 +593,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Key:            dstKey,
 			Size:           int64(len(srcMetadata.Data)),
 			ETag:           srcMetadata.ETag,
-			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ChecksumSHA256: srcMetadata.ChecksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       metadataToUse,
 		}, nil
@@ -606,10 +607,11 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 		}
 
 		dstMetadata := &objectMetadata{
-			ETag:     srcMetadata.ETag,
-			Digest:   srcMetadata.Digest,
-			Metadata: metadataToUse,
-			IsDir:    strings.HasSuffix(dstKey, "/"),
+			ETag:           srcMetadata.ETag,
+			ChecksumSHA256: srcMetadata.ChecksumSHA256,
+			Digest:         srcMetadata.Digest,
+			Metadata:       metadataToUse,
+			IsDir:          strings.HasSuffix(dstKey, "/"),
 		}
 
 		if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
@@ -645,7 +647,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Key:            dstKey,
 			Size:           fileInfo.Size(),
 			ETag:           srcMetadata.ETag,
-			ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+			ChecksumSHA256: srcMetadata.ChecksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       metadataToUse,
 		}, nil
@@ -653,9 +655,10 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 
 	// Zero-byte object (no digest and no inline data)
 	dstMetadata := &objectMetadata{
-		ETag:     srcMetadata.ETag,
-		Metadata: metadataToUse,
-		IsDir:    strings.HasSuffix(dstKey, "/"),
+		ETag:           srcMetadata.ETag,
+		ChecksumSHA256: srcMetadata.ChecksumSHA256,
+		Metadata:       metadataToUse,
+		IsDir:          strings.HasSuffix(dstKey, "/"),
 	}
 
 	if err := saveObjectMetadata(dstMetaPath, dstMetadata); err != nil {
@@ -677,7 +680,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 		Key:            dstKey,
 		Size:           0,
 		ETag:           srcMetadata.ETag,
-		ChecksumSHA256: urlSafeToStdBase64(srcMetadata.ETag),
+		ChecksumSHA256: srcMetadata.ChecksumSHA256,
 		ModTime:        metaFileInfo.ModTime(),
 		Metadata:       metadataToUse,
 	}, nil

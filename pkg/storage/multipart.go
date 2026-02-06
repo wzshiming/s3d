@@ -121,7 +121,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 		Key:            key,
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
