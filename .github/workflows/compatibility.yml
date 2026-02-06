@@ -110,7 +110,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq s3fs fuse3 awscli autoconf automake perl libtest-harness-perl
+          sudo apt-get install -y -qq s3fs fuse3 autoconf automake perl libtest-harness-perl
 
       - name: Run pjdfstest compatibility tests
         id: pjdfstest
