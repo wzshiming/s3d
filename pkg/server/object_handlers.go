@@ -10,6 +10,12 @@ import (
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
+const (
+	// Default owner ID and display name for S3 objects
+	defaultOwnerID          = "s3d-owner"
+	defaultOwnerDisplayName = "s3d-owner"
+)
+
 // handlePutObject handles PutObject operation
 func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	if r.Header.Get("x-amz-rename-source") != "" {
@@ -380,8 +386,8 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		}
 		if fetchOwner {
 			content.Owner = &Owner{
-				ID:          "s3d-owner",
-				DisplayName: "s3d-owner",
+				ID:          defaultOwnerID,
+				DisplayName: defaultOwnerDisplayName,
 			}
 		}
 		result.Contents = append(result.Contents, content)
