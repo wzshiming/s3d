@@ -261,19 +261,16 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	var objects []storage.ObjectInfo
 	var commonPrefixes []string
 	var err error
-	if maxKeys == 0 {
-		// When maxKeys is 0, return empty result immediately (nil slices work fine)
-	} else {
-		// Fetch one extra object to determine if there are more results
+	if maxKeys != 0 {
 		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-	}
-	if err != nil {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		if err != nil {
+			if err == storage.ErrBucketNotFound {
+				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+			} else {
+				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+			}
+			return
 		}
-		return
 	}
 
 	// Determine if results are truncated
@@ -350,19 +347,16 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	var objects []storage.ObjectInfo
 	var commonPrefixes []string
 	var err error
-	if maxKeys == 0 {
-		// When maxKeys is 0, return empty result immediately (nil slices work fine)
-	} else {
-		// Fetch one extra object to determine if there are more results
+	if maxKeys != 0 {
 		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-	}
-	if err != nil {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		if err != nil {
+			if err == storage.ErrBucketNotFound {
+				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+			} else {
+				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+			}
+			return
 		}
-		return
 	}
 
 	// Determine if results are truncated

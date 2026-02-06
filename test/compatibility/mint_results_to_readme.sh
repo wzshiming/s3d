@@ -32,7 +32,7 @@ TEST_LOG="$(echo "$TEST_LOG" | sed "s#${REPO_ROOT}#<DIR>#g")"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z/<DATETIME>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<UUID>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/bucket-[a-z0-9]{12}/bucket-<RANDOM_SUFFIX>/g')"
-TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/bucket-[0-9]{4,5}/bucket-<RANDOM_SUFFIX>/g')"
+TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/bucket-[0-9]{3,5}/bucket-<RANDOM_SUFFIX>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/test-[a-z0-9]{14,16}/test-<RANDOM_SUFFIX>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/php-[a-z0-9]{13}/php-<RANDOM_SUFFIX>/g')"
 
