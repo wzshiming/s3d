@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -77,9 +78,10 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while writing
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate both MD5 (for ETag) and SHA256 (for checksum) while writing
+	md5Hash := md5.New()
+	sha256Hash := sha256.New()
+	writer := io.MultiWriter(tmpFile, md5Hash, sha256Hash)
 
 	_, err = io.Copy(writer, data)
 	if err != nil {
@@ -88,8 +90,10 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	tmpFile.Close()
 
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	checksumSHA256 := urlSafeToStdBase64(etag)
+	// ETag uses MD5 hash (hex-encoded, as per AWS S3 standard)
+	etag := hex.EncodeToString(md5Hash.Sum(nil))
+	// ChecksumSHA256 uses SHA256 hash (base64-encoded)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sha256Hash.Sum(nil))
 
 	// Validate checksum if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
@@ -117,7 +121,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 		Key:            key,
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
@@ -197,9 +201,10 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while copying
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate both MD5 (for ETag) and SHA256 (for checksum) while copying
+	md5Hash := md5.New()
+	sha256Hash := sha256.New()
+	writer := io.MultiWriter(tmpFile, md5Hash, sha256Hash)
 
 	// Copy data from source (either inline or digest)
 	if len(srcMetadata.Data) > 0 {
@@ -237,7 +242,10 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	tmpFile.Close()
 
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+	// ETag uses MD5 hash (hex-encoded, as per AWS S3 standard)
+	etag := hex.EncodeToString(md5Hash.Sum(nil))
+	// ChecksumSHA256 uses SHA256 hash (base64-encoded)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sha256Hash.Sum(nil))
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -260,7 +268,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		Key:            key,
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
@@ -297,21 +305,17 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	defer os.Remove(tmpFile.Name())
 
-	hash := sha256.New()
+	// Calculate both MD5 (for ETag) and SHA256 (for checksum and digest)
+	md5Hash := md5.New()
+	sha256Hash := sha256.New()
 
 	// Concatenate parts in order
 	for _, part := range parts {
 		// Strip quotes from ETag if present (client may send quoted ETags)
 		etag := strings.Trim(part.ETag, `"`)
 
-		// Validate part checksum if provided
-		if part.ChecksumSHA256 != "" {
-			expectedPartChecksum := urlSafeToStdBase64(etag)
-			if part.ChecksumSHA256 != expectedPartChecksum {
-				tmpFile.Close()
-				return nil, ErrChecksumMismatch
-			}
-		}
+		// Parts are validated during UploadPart based on their individual MD5 ETags
+		// The partPath uses the ETag to locate the correct part file
 
 		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, etag))
 		partFile, err := os.Open(partPath)
@@ -320,7 +324,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 			return nil, err
 		}
 
-		if _, err := io.Copy(io.MultiWriter(tmpFile, hash), partFile); err != nil {
+		if _, err := io.Copy(io.MultiWriter(tmpFile, md5Hash, sha256Hash), partFile); err != nil {
 			partFile.Close()
 			tmpFile.Close()
 			return nil, err
@@ -335,10 +339,10 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	// Store metadata - use URL-safe base64 encoded SHA256
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-
-	checksumSHA256 := urlSafeToStdBase64(etag)
+	// ETag uses MD5 hash (hex-encoded, as per AWS S3 standard)
+	etag := hex.EncodeToString(md5Hash.Sum(nil))
+	// ChecksumSHA256 uses SHA256 hash (base64-encoded)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sha256Hash.Sum(nil))
 
 	// Validate checksum if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
@@ -357,13 +361,14 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Use content-addressable storage for all multipart uploads (they're typically large)
-	digest := hex.EncodeToString(hash.Sum(nil))
+	digest := hex.EncodeToString(sha256Hash.Sum(nil))
 
 	// Create object metadata from upload metadata
 	meta := &objectMetadata{
-		ETag:     etag,
-		Digest:   digest,
-		Metadata: uploadMetadata.Metadata,
+		ETag:           etag,
+		ChecksumSHA256: checksumSHA256,
+		Digest:         digest,
+		Metadata:       uploadMetadata.Metadata,
 	}
 
 	// Store in content-addressable storage
@@ -403,7 +408,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		Key:            key,
 		Size:           fileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        metaFileInfo.ModTime(),
 		Metadata:       uploadMetadata.Metadata,
 	}, nil

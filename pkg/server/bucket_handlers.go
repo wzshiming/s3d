@@ -68,6 +68,8 @@ func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, b
 	if err != nil {
 		if err == storage.ErrBucketAlreadyExists {
 			s.errorResponse(w, r, "BucketAlreadyExists", "Bucket already exists", http.StatusConflict)
+		} else if err == storage.ErrInvalidBucketName {
+			s.errorResponse(w, r, "InvalidBucketName", "The specified bucket is not valid", http.StatusBadRequest)
 		} else {
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
@@ -84,6 +86,8 @@ func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, b
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else if err == storage.ErrBucketNotEmpty {
+			s.errorResponse(w, r, "BucketNotEmpty", "The bucket you tried to delete is not empty", http.StatusConflict)
 		} else {
 			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}

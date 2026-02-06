@@ -30,6 +30,16 @@ func (s *Storage) DeleteBucket(bucket string) error {
 		return ErrBucketNotFound
 	}
 
+	// Check if bucket is empty
+	entries, err := os.ReadDir(bucketPath)
+	if err != nil {
+		return err
+	}
+
+	if len(entries) > 0 {
+		return ErrBucketNotEmpty
+	}
+
 	return os.RemoveAll(bucketPath)
 }
 

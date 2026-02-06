@@ -34,8 +34,14 @@ func extractMetadata(r *http.Request) storage.Metadata {
 	if contentDisposition := r.Header.Get("Content-Disposition"); contentDisposition != "" {
 		metadata.ContentDisposition = contentDisposition
 	}
+	if contentEncoding := r.Header.Get("Content-Encoding"); contentEncoding != "" {
+		metadata.ContentEncoding = contentEncoding
+	}
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		metadata.ContentType = contentType
+	}
+	if expires := r.Header.Get("Expires"); expires != "" {
+		metadata.Expires = expires
 	}
 
 	return metadata
@@ -49,10 +55,16 @@ func setMetadataHeaders(w http.ResponseWriter, metadata storage.Metadata) {
 	if metadata.ContentDisposition != "" {
 		w.Header().Set("Content-Disposition", metadata.ContentDisposition)
 	}
+	if metadata.ContentEncoding != "" {
+		w.Header().Set("Content-Encoding", metadata.ContentEncoding)
+	}
 	if metadata.ContentType != "" {
 		w.Header().Set("Content-Type", metadata.ContentType)
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if metadata.Expires != "" {
+		w.Header().Set("Expires", metadata.Expires)
 	}
 
 	for key, value := range metadata.XAmzMeta {
