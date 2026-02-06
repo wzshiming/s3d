@@ -314,8 +314,8 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		// Strip quotes from ETag if present (client may send quoted ETags)
 		etag := strings.Trim(part.ETag, `"`)
 
-		// Validate part checksum if provided (parts use their own etags)
-		// Note: We don't validate part ETags here since they were validated during upload
+		// Parts are validated during UploadPart based on their individual MD5 ETags
+		// The partPath uses the ETag to locate the correct part file
 
 		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, etag))
 		partFile, err := os.Open(partPath)
