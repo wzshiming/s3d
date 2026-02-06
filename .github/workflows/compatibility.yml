@@ -94,3 +94,47 @@ jobs:
             echo "⚠️ Results differ from baseline. To update, run: make update-s3tests-compatibility"
             exit 1
           fi
+
+  pjdfstest-compatibility-tests:
+    name: pjd/pjdfstest Compatibility Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq s3fs fuse3 autoconf automake perl libtest-harness-perl
+
+      - name: Run pjdfstest compatibility tests
+        id: pjdfstest
+        continue-on-error: true
+        run: |
+          ./test/compatibility/pjdfstest_test.sh
+
+      - name: Upload pjdfstest logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pjdfstest-logs
+          path: test/compatibility/pjdfstest-logs/
+          retention-days: 2
+
+      - name: Parse test results
+        id: parse
+        run: |
+          ./test/compatibility/pjdfstest_results_to_readme.sh > ./test/compatibility/pjdfstest_compatibility.new.md
+          cat ./test/compatibility/pjdfstest_compatibility.new.md >> $GITHUB_STEP_SUMMARY
+          if diff ./test/compatibility/pjdfstest_compatibility.new.md ./test/compatibility/pjdfstest_compatibility.md; then
+            echo "✅ Results match the baseline file."
+          else
+            echo ""
+            echo "⚠️ Results differ from baseline. To update, run: make update-pjdfstest-compatibility"
+            exit 1
+          fi

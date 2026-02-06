@@ -1,4 +1,4 @@
-.PHONY: build test test-integration test-e2e test-mint-compatibility test-s3tests-compatibility update-mint-compatibility update-s3tests-compatibility
+.PHONY: build test test-integration test-e2e test-mint-compatibility test-s3tests-compatibility test-pjdfstest-compatibility update-mint-compatibility update-s3tests-compatibility update-pjdfstest-compatibility
 
 # Build the server binary
 build:
@@ -31,3 +31,11 @@ test-s3tests-compatibility:
 # Update s3tests_compatibility.md from the latest test results
 update-s3tests-compatibility:
 	./test/compatibility/s3tests_results_to_readme.sh > ./test/compatibility/s3tests_compatibility.md
+
+# Run compatibility tests with pjd/pjdfstest
+test-pjdfstest-compatibility:
+	./test/compatibility/pjdfstest_test.sh
+
+# Update pjdfstest_compatibility.md from the latest test results
+update-pjdfstest-compatibility:
+	./test/compatibility/pjdfstest_results_to_readme.sh > ./test/compatibility/pjdfstest_compatibility.md
