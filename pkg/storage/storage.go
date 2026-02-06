@@ -31,6 +31,7 @@ var (
 var (
 	ErrBucketNotFound      = errors.New("bucket not found")
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
+	ErrBucketNotEmpty      = errors.New("bucket not empty")
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrInvalidUploadID     = errors.New("invalid upload id")
 	ErrInvalidPartNumber   = errors.New("invalid part number")
@@ -109,6 +110,10 @@ func sanitizeBucketName(bucket string) error {
 	if bucket == "" || bucket == "." || bucket == ".." {
 		return ErrInvalidBucketName
 	}
+	// AWS S3 requires bucket names to be at least 3 characters
+	if len(bucket) < 3 {
+		return ErrInvalidBucketName
+	}
 	if strings.Contains(bucket, "/") || strings.Contains(bucket, "\\") {
 		return ErrInvalidBucketName
 	}
@@ -177,6 +182,8 @@ type objectMetadata struct {
 	Metadata Metadata
 
 	ETag string
+	// ChecksumSHA256 stores the SHA256 checksum (base64-encoded)
+	ChecksumSHA256 string
 	// Data stores the file content inline for small files (<=4096 bytes)
 	// If Data is not nil and not empty, it contains the entire file content
 	Data []byte
@@ -201,7 +208,13 @@ func metadataEqual(a, b Metadata) bool {
 	if a.ContentDisposition != b.ContentDisposition {
 		return false
 	}
+	if a.ContentEncoding != b.ContentEncoding {
+		return false
+	}
 	if a.ContentType != b.ContentType {
+		return false
+	}
+	if a.Expires != b.Expires {
 		return false
 	}
 	if len(a.XAmzMeta) != len(b.XAmzMeta) {

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -73,9 +74,10 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while writing
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate both MD5 (for ETag) and SHA256 (for checksum) while writing
+	md5Hash := md5.New()
+	sha256Hash := sha256.New()
+	writer := io.MultiWriter(tmpFile, md5Hash, sha256Hash)
 
 	if _, err := io.Copy(writer, data); err != nil {
 		tmpFile.Close()
@@ -89,8 +91,10 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		return nil, err
 	}
 
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	checksumSHA256 := urlSafeToStdBase64(etag)
+	// ETag uses MD5 hash (hex-encoded, as per AWS S3 standard)
+	etag := hex.EncodeToString(md5Hash.Sum(nil))
+	// ChecksumSHA256 uses SHA256 hash (base64-encoded)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sha256Hash.Sum(nil))
 
 	// Validate checksum if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
@@ -122,16 +126,17 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 			Key:            key,
 			Size:           fileInfo.Size(),
 			ETag:           etag,
-			ChecksumSHA256: urlSafeToStdBase64(etag),
+			ChecksumSHA256: checksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       existingMetadata.Metadata,
 		}, nil
 	}
 
 	metadata := &objectMetadata{
-		ETag:     etag,
-		Metadata: userMetadata,
-		IsDir:    strings.HasSuffix(key, "/"),
+		ETag:           etag,
+		ChecksumSHA256: checksumSHA256,
+		Metadata:       userMetadata,
+		IsDir:          strings.HasSuffix(key, "/"),
 	}
 
 	// If file is small enough, embed it in metadata
@@ -154,7 +159,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		}
 	} else {
 		// Use content-addressable storage for larger files
-		digest := hex.EncodeToString(hash.Sum(nil))
+		digest := hex.EncodeToString(sha256Hash.Sum(nil))
 		metadata.Digest = digest
 
 		// Store the file in .objects directory
@@ -183,7 +188,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		Key:            key,
 		Size:           fileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        metaFileInfo.ModTime(),
 		Metadata:       userMetadata,
 	}, nil
@@ -226,7 +231,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 			Key:            key,
 			Size:           int64(len(metadata.Data)),
 			ETag:           metadata.ETag,
-			ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+			ChecksumSHA256: metadata.ChecksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       metadata.Metadata,
 		}
@@ -263,7 +268,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 			Key:            key,
 			Size:           fileInfo.Size(),
 			ETag:           metadata.ETag,
-			ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+			ChecksumSHA256: metadata.ChecksumSHA256,
 			ModTime:        metaFileInfo.ModTime(),
 			Metadata:       metadata.Metadata,
 		}
@@ -281,7 +286,7 @@ func (s *Storage) GetObject(bucket, key string) (io.ReadSeekCloser, *ObjectInfo,
 		Key:            key,
 		Size:           0,
 		ETag:           metadata.ETag,
-		ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+		ChecksumSHA256: metadata.ChecksumSHA256,
 		ModTime:        metaFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}
