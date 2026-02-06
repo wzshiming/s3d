@@ -243,9 +243,12 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	marker := query.Get("marker")
 	maxKeys := 1000
 	if mk := query.Get("max-keys"); mk != "" {
-		if parsed, err := strconv.Atoi(mk); err == nil {
-			maxKeys = parsed
+		parsed, err := strconv.Atoi(mk)
+		if err != nil || parsed < 0 {
+			s.errorResponse(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
+			return
 		}
+		maxKeys = parsed
 	}
 
 	// Fetch one extra object to determine if there are more results
@@ -310,11 +313,15 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	delimiter := query.Get("delimiter")
 	startAfter := query.Get("start-after")
 	continuationToken := query.Get("continuation-token")
+	fetchOwner := query.Get("fetch-owner") == "true"
 	maxKeys := 1000
 	if mk := query.Get("max-keys"); mk != "" {
-		if parsed, err := strconv.Atoi(mk); err == nil {
-			maxKeys = parsed
+		parsed, err := strconv.Atoi(mk)
+		if err != nil || parsed < 0 {
+			s.errorResponse(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
+			return
 		}
+		maxKeys = parsed
 	}
 
 	// Determine the marker to use
@@ -364,13 +371,20 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	}
 
 	for _, obj := range objects {
-		result.Contents = append(result.Contents, Contents{
+		content := Contents{
 			Key:          obj.Key,
 			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
 			StorageClass: "STANDARD",
-		})
+		}
+		if fetchOwner {
+			content.Owner = &Owner{
+				ID:          "s3d-owner",
+				DisplayName: "s3d-owner",
+			}
+		}
+		result.Contents = append(result.Contents, content)
 	}
 
 	for _, cp := range commonPrefixes {

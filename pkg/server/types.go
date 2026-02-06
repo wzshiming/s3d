@@ -35,6 +35,7 @@ type Contents struct {
 	ETag         string    `xml:"ETag"`
 	Size         int64     `xml:"Size"`
 	StorageClass string    `xml:"StorageClass"`
+	Owner        *Owner    `xml:"Owner,omitempty"`
 }
 
 // CommonPrefix represents a common prefix in ListObjectsV2 response
@@ -47,7 +48,7 @@ type ListBucketResult struct {
 	XMLName        xml.Name       `xml:"ListBucketResult"`
 	Name           string         `xml:"Name"`
 	Prefix         string         `xml:"Prefix"`
-	Marker         string         `xml:"Marker,omitempty"`
+	Marker         string         `xml:"Marker"`
 	NextMarker     string         `xml:"NextMarker,omitempty"`
 	Delimiter      string         `xml:"Delimiter,omitempty"`
 	MaxKeys        int            `xml:"MaxKeys"`
@@ -65,7 +66,7 @@ type ListBucketResultV2 struct {
 	MaxKeys               int            `xml:"MaxKeys"`
 	KeyCount              int            `xml:"KeyCount"`
 	IsTruncated           bool           `xml:"IsTruncated"`
-	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
+	ContinuationToken     string         `xml:"ContinuationToken"`
 	NextContinuationToken string         `xml:"NextContinuationToken,omitempty"`
 	StartAfter            string         `xml:"StartAfter,omitempty"`
 	Contents              []Contents     `xml:"Contents"`

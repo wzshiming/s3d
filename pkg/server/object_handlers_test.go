@@ -1450,3 +1450,246 @@ func TestCopyObjectMetadataDirective(t *testing.T) {
 		}
 	})
 }
+
+// TestListObjectsV2FetchOwner tests the fetch-owner parameter support
+func TestListObjectsV2FetchOwner(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-fetch-owner"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Put a test object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+		Body:   strings.NewReader("test content"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+	})
+
+	t.Run("WithFetchOwner", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     aws.String(bucketName),
+			FetchOwner: aws.Bool(true),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with FetchOwner failed: %v", err)
+		}
+
+		if len(output.Contents) == 0 {
+			t.Fatal("Expected at least one object in the list")
+		}
+
+		// Check that Owner field is present
+		obj := output.Contents[0]
+		if obj.Owner == nil {
+			t.Error("Expected Owner field to be present when FetchOwner=true")
+		} else {
+			if obj.Owner.ID == nil || *obj.Owner.ID == "" {
+				t.Error("Expected Owner.ID to be set")
+			}
+			if obj.Owner.DisplayName == nil || *obj.Owner.DisplayName == "" {
+				t.Error("Expected Owner.DisplayName to be set")
+			}
+		}
+	})
+
+	t.Run("WithoutFetchOwner", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     aws.String(bucketName),
+			FetchOwner: aws.Bool(false),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 without FetchOwner failed: %v", err)
+		}
+
+		if len(output.Contents) == 0 {
+			t.Fatal("Expected at least one object in the list")
+		}
+
+		// Owner field should be nil when FetchOwner=false
+		obj := output.Contents[0]
+		if obj.Owner != nil {
+			t.Error("Expected Owner field to be nil when FetchOwner=false")
+		}
+	})
+}
+
+// TestListObjectsMarkerField tests that Marker field is always present in ListObjects v1
+func TestListObjectsMarkerField(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-marker-field"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Put a test object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+		Body:   strings.NewReader("test content"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+	})
+
+	t.Run("MarkerNone", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			t.Fatalf("ListObjects failed: %v", err)
+		}
+
+		// Marker field should always be present (even if empty string)
+		if output.Marker == nil {
+			t.Error("Expected Marker field to be present in response")
+		}
+	})
+
+	t.Run("MarkerEmpty", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: aws.String(bucketName),
+			Marker: aws.String(""),
+		})
+		if err != nil {
+			t.Fatalf("ListObjects with empty marker failed: %v", err)
+		}
+
+		// Marker field should always be present
+		if output.Marker == nil {
+			t.Error("Expected Marker field to be present in response")
+		}
+	})
+}
+
+// TestListObjectsV2ContinuationToken tests that ContinuationToken field is always present
+func TestListObjectsV2ContinuationToken(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-continuation-token"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Put a test object
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+		Body:   strings.NewReader("test content"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test.txt"),
+	})
+
+	t.Run("ContinuationTokenEmpty", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucketName),
+			ContinuationToken: aws.String(""),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with empty ContinuationToken failed: %v", err)
+		}
+
+		// ContinuationToken field should always be present
+		if output.ContinuationToken == nil {
+			t.Error("Expected ContinuationToken field to be present in response")
+		}
+	})
+}
+
+// TestListObjectsInvalidMaxKeys tests validation of max-keys parameter
+func TestListObjectsInvalidMaxKeys(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-invalid-maxkeys"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	t.Run("ListObjectsV1MaxKeysZero", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(0),
+		})
+		// max-keys=0 is valid and should return no objects
+		if err != nil {
+			t.Fatalf("ListObjects with MaxKeys=0 should not fail: %v", err)
+		}
+		if len(output.Contents) != 0 {
+			t.Errorf("Expected 0 objects with MaxKeys=0, got %d", len(output.Contents))
+		}
+	})
+
+	t.Run("ListObjectsV2MaxKeysZero", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(0),
+		})
+		// max-keys=0 is valid and should return no objects
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with MaxKeys=0 should not fail: %v", err)
+		}
+		if len(output.Contents) != 0 {
+			t.Errorf("Expected 0 objects with MaxKeys=0, got %d", len(output.Contents))
+		}
+	})
+
+	t.Run("ListObjectsV1MaxKeysNegative", func(t *testing.T) {
+		_, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(-1),
+		})
+		// Negative max-keys should fail
+		if err == nil {
+			t.Error("Expected error for negative MaxKeys, but got none")
+		}
+	})
+
+	t.Run("ListObjectsV2MaxKeysNegative", func(t *testing.T) {
+		_, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucketName),
+			MaxKeys: aws.Int32(-1),
+		})
+		// Negative max-keys should fail
+		if err == nil {
+			t.Error("Expected error for negative MaxKeys, but got none")
+		}
+	})
+}
