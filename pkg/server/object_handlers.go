@@ -257,8 +257,18 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		maxKeys = parsed
 	}
 
-	// Fetch one extra object to determine if there are more results
-	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
+	// Handle maxKeys=0 special case
+	var objects []storage.ObjectInfo
+	var commonPrefixes []string
+	var err error
+	if maxKeys == 0 {
+		// When maxKeys is 0, return empty result immediately
+		objects = []storage.ObjectInfo{}
+		commonPrefixes = []string{}
+	} else {
+		// Fetch one extra object to determine if there are more results
+		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
+	}
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
@@ -338,8 +348,18 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		marker = startAfter
 	}
 
-	// Fetch one extra object to determine if there are more results
-	objects, commonPrefixes, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
+	// Handle maxKeys=0 special case
+	var objects []storage.ObjectInfo
+	var commonPrefixes []string
+	var err error
+	if maxKeys == 0 {
+		// When maxKeys is 0, return empty result immediately
+		objects = []storage.ObjectInfo{}
+		commonPrefixes = []string{}
+	} else {
+		// Fetch one extra object to determine if there are more results
+		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
+	}
 	if err != nil {
 		if err == storage.ErrBucketNotFound {
 			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
