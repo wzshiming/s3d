@@ -107,13 +107,14 @@ func TestPresignedPost(t *testing.T) {
 	t.Run("PresignedPostUpload", func(t *testing.T) {
 		// Create policy
 		expiration := time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
+		const maxUploadSize = 10485760 // 10MB
 		policy := map[string]interface{}{
 			"expiration": expiration,
 			"conditions": []interface{}{
 				map[string]string{"bucket": bucketName},
 				[]interface{}{"starts-with", "$key", ""},
 				[]interface{}{"starts-with", "$Content-Type", ""},
-				[]interface{}{"content-length-range", 0, 10485760}, // 10MB max
+				[]interface{}{"content-length-range", 0, maxUploadSize},
 			},
 		}
 
@@ -265,6 +266,7 @@ func TestPresignedPost(t *testing.T) {
 		if resp.StatusCode != http.StatusForbidden {
 			body, _ := io.ReadAll(resp.Body)
 			t.Errorf("Expected status 403, got %d: %s", resp.StatusCode, string(body))
+			return
 		}
 
 		// Verify error response contains SignatureDoesNotMatch

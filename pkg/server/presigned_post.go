@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -156,43 +155,4 @@ func IsPresignedPost(r *http.Request) bool {
 	}
 
 	return true
-}
-
-// extractPresignedPostBucket extracts the bucket name for presigned POST
-// The bucket can be in the path (/bucket) or in the form field
-func extractPresignedPostBucket(r *http.Request, path string) (string, error) {
-	// First try to get bucket from path
-	parts := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 2)
-	if len(parts) > 0 && parts[0] != "" {
-		return parts[0], nil
-	}
-
-	// If not in path, we'll need to parse form to get it
-	// This is handled by the caller
-	return "", fmt.Errorf("bucket not found in path")
-}
-
-// readFormValue safely reads a form value after ParseMultipartForm
-func readFormValue(r *http.Request, key string) string {
-	if r.MultipartForm != nil && r.MultipartForm.Value != nil {
-		if values, ok := r.MultipartForm.Value[key]; ok && len(values) > 0 {
-			return values[0]
-		}
-	}
-	return ""
-}
-
-// readFormFile safely reads a file from multipart form
-func readFormFile(r *http.Request, key string) (io.ReadCloser, int64, error) {
-	if r.MultipartForm != nil && r.MultipartForm.File != nil {
-		if fileHeaders, ok := r.MultipartForm.File[key]; ok && len(fileHeaders) > 0 {
-			fileHeader := fileHeaders[0]
-			file, err := fileHeader.Open()
-			if err != nil {
-				return nil, 0, err
-			}
-			return file, fileHeader.Size, nil
-		}
-	}
-	return nil, 0, fmt.Errorf("file not found")
 }
