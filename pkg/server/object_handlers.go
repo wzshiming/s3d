@@ -106,6 +106,12 @@ func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// Validate key limit (AWS S3 limit is 1000 keys per request)
+	if len(deleteReq.Objects) > 1000 {
+		s.errorResponse(w, r, "MalformedXML", "You have attempted to delete more objects than allowed", http.StatusBadRequest)
+		return
+	}
+
 	// Process deletions
 	result := DeleteObjectsResult{}
 
@@ -376,7 +382,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		Prefix:            prefix,
 		Delimiter:         delimiter,
 		MaxKeys:           maxKeys,
-		KeyCount:          len(objects),
+		KeyCount:          len(objects) + len(commonPrefixes),
 		IsTruncated:       isTruncated,
 		StartAfter:        startAfter,
 		ContinuationToken: continuationToken,
