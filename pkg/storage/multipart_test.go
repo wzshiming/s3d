@@ -284,10 +284,10 @@ func TestAbortAfterComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	
+
 	bucketName := "test-bucket"
 	objectKey := "test-object.txt"
-	
+
 	if err := store.CreateBucket(bucketName); err != nil {
 		t.Fatal(err)
 	}
