@@ -417,3 +417,88 @@ func TestMultipartUploadPersistence(t *testing.T) {
 		t.Fatalf("Complete should work after restart: %v", err)
 	}
 }
+
+// TestConcurrentMultipartUploads tests that multiple concurrent multipart uploads
+// for the same key don't interfere with each other (no race conditions in cleanup)
+func TestConcurrentMultipartUploads(t *testing.T) {
+// Create temp directory
+tmpDir, err := os.MkdirTemp("", "storage-test-*")
+if err != nil {
+t.Fatalf("Failed to create temp dir: %v", err)
+}
+defer os.RemoveAll(tmpDir)
+
+store, err := NewStorage(tmpDir)
+if err != nil {
+t.Fatalf("Failed to create storage: %v", err)
+}
+defer store.Close()
+
+bucketName := "test-bucket-concurrent"
+objectKey := "same-key.txt"
+
+// Create bucket
+err = store.CreateBucket(bucketName)
+if err != nil {
+t.Fatalf("CreateBucket failed: %v", err)
+}
+
+// Initiate two multipart uploads for the same key
+uploadID1, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
+if err != nil {
+t.Fatalf("InitiateMultipartUpload 1 failed: %v", err)
+}
+
+uploadID2, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
+if err != nil {
+t.Fatalf("InitiateMultipartUpload 2 failed: %v", err)
+}
+
+// Upload parts for first upload
+part1Content := "Upload 1 content"
+objInfo1, err := store.UploadPart(bucketName, objectKey, uploadID1, 1, bytes.NewReader([]byte(part1Content)), "")
+if err != nil {
+t.Fatalf("UploadPart for upload 1 failed: %v", err)
+}
+
+// Complete first upload - this should NOT affect the second upload
+_, err = store.CompleteMultipartUpload(bucketName, objectKey, uploadID1, []Multipart{
+{PartNumber: 1, ETag: objInfo1.ETag},
+}, "")
+if err != nil {
+t.Fatalf("CompleteMultipartUpload for upload 1 failed: %v", err)
+}
+
+// Upload parts for second upload - this should still work
+part2Content := "Upload 2 content"
+_, err = store.UploadPart(bucketName, objectKey, uploadID2, 1, bytes.NewReader([]byte(part2Content)), "")
+if err != nil {
+t.Fatalf("UploadPart for upload 2 failed after upload 1 completed: %v", err)
+}
+
+// Abort second upload - this should also work
+err = store.AbortMultipartUpload(bucketName, objectKey, uploadID2)
+if err != nil {
+t.Fatalf("AbortMultipartUpload for upload 2 failed: %v", err)
+}
+
+// Verify that aborting upload 2 doesn't affect the completed upload 1
+content, objInfo, err := store.GetObject(bucketName, objectKey)
+if err != nil {
+t.Fatalf("GetObject failed: %v", err)
+}
+defer content.Close()
+
+data, err := io.ReadAll(content)
+if err != nil {
+t.Fatalf("Failed to read object: %v", err)
+}
+
+if string(data) != part1Content {
+t.Errorf("Expected content %q, got %q", part1Content, string(data))
+}
+
+if objInfo.Key != objectKey {
+t.Errorf("Expected key %q, got %q", objectKey, objInfo.Key)
+}
+}
