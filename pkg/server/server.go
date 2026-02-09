@@ -92,6 +92,9 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else if query.Has("uploadId") {
 				uploadID := query.Get("uploadId")
 				s.handleCompleteMultipartUpload(w, r, bucket, key, uploadID)
+			} else if query.Has("select") {
+				// SelectObject is not implemented yet
+				s.errorResponse(w, r, "NotImplemented", "The SelectObject operation is not implemented", http.StatusNotImplemented)
 			} else {
 				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 			}
