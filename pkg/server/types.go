@@ -160,6 +160,15 @@ type CopyPartResult struct {
 	ETag         string    `xml:"ETag"`
 }
 
+// PostObjectResult is the response for POST object upload when success_action_status=201
+type PostObjectResult struct {
+	XMLName  xml.Name `xml:"PostResponse"`
+	Location string   `xml:"Location"`
+	Bucket   string   `xml:"Bucket"`
+	Key      string   `xml:"Key"`
+	ETag     string   `xml:"ETag"`
+}
+
 // Error represents an S3 error response
 type Error struct {
 	XMLName xml.Name `xml:"Error"`

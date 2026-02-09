@@ -74,6 +74,8 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPost:
 			if query.Has("delete") {
 				s.handleDeleteObjects(w, r, bucket)
+			} else if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+				s.handlePostObject(w, r, bucket)
 			} else {
 				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 			}
