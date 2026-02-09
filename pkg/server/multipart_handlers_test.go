@@ -323,14 +323,17 @@ func TestAbortMultipartUploadInvalidID(t *testing.T) {
 		t.Fatalf("CreateBucket failed: %v", err)
 	}
 
+	// Aborting a non-existent upload should succeed (idempotent behavior)
+	// This allows cleanup code to safely call abort without checking if the
+	// upload still exists, which is common in error handling paths.
 	_, err = ts.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 		Bucket:   &bucketName,
 		Key:      aws.String("test.txt"),
 		UploadId: aws.String("invalid-upload-id"),
 	})
 
-	if err == nil {
-		t.Fatal("Expected error for invalid upload ID")
+	if err != nil {
+		t.Fatalf("AbortMultipartUpload with invalid ID should succeed (idempotent): %v", err)
 	}
 }
 

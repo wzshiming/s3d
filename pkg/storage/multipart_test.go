@@ -135,6 +135,12 @@ func TestAbortMultipartUpload(t *testing.T) {
 	if err != ErrInvalidUploadID {
 		t.Fatal("Expected ErrInvalidUploadID after abort")
 	}
+
+	// Test idempotent abort - aborting again should succeed
+	err = store.AbortMultipartUpload(bucketName, objectKey, uploadID)
+	if err != nil {
+		t.Fatalf("Second AbortMultipartUpload should succeed (idempotent): %v", err)
+	}
 }
 
 func TestListMultipartUploads(t *testing.T) {
@@ -263,6 +269,54 @@ func TestListParts(t *testing.T) {
 
 	// Clean up
 	store.AbortMultipartUpload(bucketName, objectKey, uploadID)
+}
+
+func TestAbortAfterComplete(t *testing.T) {
+	// Test that aborting after completing a multipart upload is idempotent
+	tmpDir, err := os.MkdirTemp("", "storage-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store, err := NewStorage(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	
+	bucketName := "test-bucket"
+	objectKey := "test-object.txt"
+	
+	if err := store.CreateBucket(bucketName); err != nil {
+		t.Fatal(err)
+	}
+
+	// Initiate multipart upload
+	uploadID, err := store.InitiateMultipartUpload(bucketName, objectKey, Metadata{})
+	if err != nil {
+		t.Fatalf("InitiateMultipartUpload failed: %v", err)
+	}
+
+	// Upload a part
+	objInfo, err := store.UploadPart(bucketName, objectKey, uploadID, 1, bytes.NewReader([]byte("test data")), "")
+	if err != nil {
+		t.Fatalf("UploadPart failed: %v", err)
+	}
+
+	// Complete the upload
+	_, err = store.CompleteMultipartUpload(bucketName, objectKey, uploadID, []Multipart{
+		{PartNumber: 1, ETag: objInfo.ETag},
+	}, "")
+	if err != nil {
+		t.Fatalf("CompleteMultipartUpload failed: %v", err)
+	}
+
+	// Try to abort the already-completed upload - should succeed (idempotent)
+	err = store.AbortMultipartUpload(bucketName, objectKey, uploadID)
+	if err != nil {
+		t.Fatalf("AbortMultipartUpload after complete should succeed (idempotent): %v", err)
+	}
 }
 
 func TestInvalidUploadID(t *testing.T) {

@@ -410,6 +410,9 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 }
 
 // AbortMultipartUpload aborts a multipart upload
+// This operation is idempotent - if the upload doesn't exist, it returns success.
+// This matches AWS S3 behavior where AbortMultipartUpload succeeds even if the upload
+// was already aborted or completed, making cleanup code simpler and more robust.
 func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 	if !s.BucketExists(bucket) {
 		return ErrBucketNotFound
@@ -418,7 +421,10 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 	// Check filesystem for upload directory
 	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		return ErrInvalidUploadID
+		// Upload doesn't exist - treat as already aborted (idempotent behavior)
+		// This allows cleanup code to safely call abort without checking if the
+		// upload still exists, which is common in error handling paths.
+		return nil
 	}
 
 	// Get the uploads base directory as the stop point
