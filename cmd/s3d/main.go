@@ -44,21 +44,30 @@ func createServer(cfg *Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := server.NewS3Handler(store, server.WithRegion(cfg.Region))
-	if cfg.Credentials == "" {
-		return s, nil
+
+	// Create authenticator if credentials are provided
+	var authenticator *auth.AWS4Authenticator
+	if cfg.Credentials != "" {
+		authenticator = auth.NewAWS4Authenticator()
+		// Add credentials if provided
+		if err := parseCredentials(cfg.Credentials, authenticator); err != nil {
+			return nil, err
+		}
 	}
 
-	// Create authenticator
-	authenticator := auth.NewAWS4Authenticator()
+	// Create S3 handler with authenticator
+	opts := []server.Option{server.WithRegion(cfg.Region)}
+	if authenticator != nil {
+		opts = append(opts, server.WithAuthenticator(authenticator))
+	}
+	s := server.NewS3Handler(store, opts...)
 
-	// Add credentials if provided
-	if err := parseCredentials(cfg.Credentials, authenticator); err != nil {
-		return nil, err
+	// Wrap with auth middleware if credentials are provided
+	if authenticator != nil {
+		return authenticator.AuthMiddleware(s), nil
 	}
 
-	// Create server
-	return authenticator.AuthMiddleware(s), nil
+	return s, nil
 }
 
 func main() {

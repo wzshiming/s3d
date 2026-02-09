@@ -113,6 +113,12 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 
 // Authenticate validates the request signature
 func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
+	// Skip authentication for presigned POST requests
+	// They will be authenticated later when the form is parsed
+	if isPresignedPost(r) {
+		return "", nil
+	}
+
 	// Check for query string authentication (presigned URLs)
 	queryParams := r.URL.Query()
 	if queryParams.Get("X-Amz-Algorithm") != "" {
@@ -129,6 +135,28 @@ func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
 	}
 
 	return "", NewAuthError("AccessDenied", "Missing or invalid authentication information")
+}
+
+// isPresignedPost checks if the request is a presigned POST request
+func isPresignedPost(r *http.Request) bool {
+	// Must be POST method
+	if r.Method != http.MethodPost {
+		return false
+	}
+
+	// Must have multipart/form-data content type
+	contentType := r.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		return false
+	}
+
+	// Check if it's not a multipart upload operation or delete operation
+	query := r.URL.Query()
+	if query.Has("uploads") || query.Has("uploadId") || query.Has("delete") {
+		return false
+	}
+
+	return true
 }
 
 // authenticateV4Query validates AWS Signature Version 4 query string authentication

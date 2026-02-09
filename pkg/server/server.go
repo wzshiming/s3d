@@ -4,13 +4,15 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
 // S3Handler represents the S3-compatible server
 type S3Handler struct {
-	storage *storage.Storage
-	region  string
+	storage       *storage.Storage
+	region        string
+	authenticator *auth.AWS4Authenticator
 }
 
 // Option is a functional option for configuring S3Handler
@@ -20,6 +22,13 @@ type Option func(*S3Handler)
 func WithRegion(region string) Option {
 	return func(h *S3Handler) {
 		h.region = region
+	}
+}
+
+// WithAuthenticator sets the authenticator for the S3Handler
+func WithAuthenticator(auth *auth.AWS4Authenticator) Option {
+	return func(h *S3Handler) {
+		h.authenticator = auth
 	}
 }
 
@@ -74,6 +83,8 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPost:
 			if query.Has("delete") {
 				s.handleDeleteObjects(w, r, bucket)
+			} else if IsPresignedPost(r) {
+				s.handlePresignedPost(w, r, bucket, s.authenticator)
 			} else {
 				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 			}
