@@ -386,18 +386,14 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	// Get the uploads base directory as the stop point
-	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
-
-	// Store the parent directory before deletion
-	parentDir := filepath.Dir(uploadDir)
-
 	if err := os.RemoveAll(uploadDir); err != nil {
 		return nil, err
 	}
 
-	// Clean up empty parent directories
-	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
+	// Note: We intentionally do not clean up empty parent directories for multipart uploads
+	// because multiple concurrent uploads may exist for the same object key.
+	// Aggressively cleaning up parent directories can cause race conditions where
+	// one upload's cleanup removes another upload's directory structure.
 
 	return &ObjectInfo{
 		Key:            key,
@@ -421,18 +417,14 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 		return ErrInvalidUploadID
 	}
 
-	// Get the uploads base directory as the stop point
-	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
-
-	// Store the parent directory before deletion
-	parentDir := filepath.Dir(uploadDir)
-
 	if err := os.RemoveAll(uploadDir); err != nil {
 		return err
 	}
 
-	// Clean up empty parent directories
-	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
+	// Note: We intentionally do not clean up empty parent directories for multipart uploads
+	// because multiple concurrent uploads may exist for the same object key.
+	// Aggressively cleaning up parent directories can cause race conditions where
+	// one upload's cleanup removes another upload's directory structure.
 
 	return nil
 }
