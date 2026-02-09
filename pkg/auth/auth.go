@@ -113,6 +113,11 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 
 // Authenticate validates the request signature
 func (a *AWS4Authenticator) authenticate(r *http.Request) (string, error) {
+	// POST form-based uploads carry auth in form fields, not headers/query.
+	if isPostFormUpload(r) {
+		return a.authenticatePostPolicy(r)
+	}
+
 	// Check for query string authentication (presigned URLs)
 	queryParams := r.URL.Query()
 	if queryParams.Get("X-Amz-Algorithm") != "" {
