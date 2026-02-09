@@ -257,32 +257,27 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		maxKeys = parsed
 	}
 
-	// Handle maxKeys=0 special case
-	var objects []storage.ObjectInfo
-	var commonPrefixes []string
-	var err error
-	if maxKeys != 0 {
-		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-		if err != nil {
-			if err == storage.ErrBucketNotFound {
-				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-			} else {
-				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-			}
-			return
+	if maxKeys == 0 {
+		result := ListBucketResult{
+			Name:      bucket,
+			Prefix:    prefix,
+			Marker:    marker,
+			Delimiter: delimiter,
+			MaxKeys:   maxKeys,
 		}
+
+		s.xmlResponse(w, r, result, http.StatusOK)
+		return
 	}
 
-	// Determine if results are truncated
-	isTruncated := len(objects) > maxKeys
-	var nextMarker string
-	if isTruncated {
-		// Remove the extra object
-		objects = objects[:maxKeys]
-		// Set next marker to the last object key
-		if len(objects) > 0 {
-			nextMarker = objects[len(objects)-1].Key
+	objects, commonPrefixes, nextMarker, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
+		return
 	}
 
 	result := ListBucketResult{
@@ -291,11 +286,8 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		Marker:      marker,
 		Delimiter:   delimiter,
 		MaxKeys:     maxKeys,
-		IsTruncated: isTruncated,
-	}
-
-	if isTruncated {
-		result.NextMarker = nextMarker
+		IsTruncated: nextMarker != "",
+		NextMarker:  nextMarker,
 	}
 
 	for _, obj := range objects {
@@ -334,7 +326,18 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		}
 		maxKeys = parsed
 	}
+	if maxKeys == 0 {
+		result := ListBucketResultV2{
+			Name:       bucket,
+			Prefix:     prefix,
+			Delimiter:  delimiter,
+			StartAfter: startAfter,
+			MaxKeys:    maxKeys,
+		}
 
+		s.xmlResponse(w, r, result, http.StatusOK)
+		return
+	}
 	// Determine the marker to use
 	marker := ""
 	if continuationToken != "" {
@@ -343,47 +346,26 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		marker = startAfter
 	}
 
-	// Handle maxKeys=0 special case
-	var objects []storage.ObjectInfo
-	var commonPrefixes []string
-	var err error
-	if maxKeys != 0 {
-		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-		if err != nil {
-			if err == storage.ErrBucketNotFound {
-				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-			} else {
-				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-			}
-			return
+	objects, commonPrefixes, nextContinuationToken, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys)
+	if err != nil {
+		if err == storage.ErrBucketNotFound {
+			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		} else {
+			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 		}
-	}
-
-	// Determine if results are truncated
-	isTruncated := len(objects) > maxKeys
-	var nextContinuationToken string
-	if isTruncated {
-		// Remove the extra object
-		objects = objects[:maxKeys]
-		// Set next continuation token to the last object key
-		if len(objects) > 0 {
-			nextContinuationToken = objects[len(objects)-1].Key
-		}
+		return
 	}
 
 	result := ListBucketResultV2{
-		Name:              bucket,
-		Prefix:            prefix,
-		Delimiter:         delimiter,
-		MaxKeys:           maxKeys,
-		KeyCount:          len(objects),
-		IsTruncated:       isTruncated,
-		StartAfter:        startAfter,
-		ContinuationToken: continuationToken,
-	}
-
-	if isTruncated {
-		result.NextContinuationToken = nextContinuationToken
+		Name:                  bucket,
+		Prefix:                prefix,
+		Delimiter:             delimiter,
+		MaxKeys:               maxKeys,
+		KeyCount:              len(objects) + len(commonPrefixes),
+		IsTruncated:           nextContinuationToken != "",
+		StartAfter:            startAfter,
+		ContinuationToken:     continuationToken,
+		NextContinuationToken: nextContinuationToken,
 	}
 
 	for _, obj := range objects {

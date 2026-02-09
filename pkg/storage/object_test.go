@@ -66,7 +66,7 @@ func TestObjectOperations(t *testing.T) {
 	}
 
 	// List objects
-	objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
+	objects, _, _, err := store.ListObjects(bucketName, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListObjects failed: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestListObjectsNonexistentBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	_, _, err = store.ListObjects("nonexistent", "", "", "", 0)
+	_, _, _, err = store.ListObjects("nonexistent", "", "", "", 0)
 	if err != ErrBucketNotFound {
 		t.Fatalf("Expected ErrBucketNotFound, got %v", err)
 	}
@@ -518,7 +518,7 @@ func TestInlineDataForSmallFiles(t *testing.T) {
 	}
 
 	// Test 3: List objects should work correctly for both inline and separate data files
-	objects, _, err := store.ListObjects(bucketName, "", "", "", 10)
+	objects, _, _, err := store.ListObjects(bucketName, "", "", "", 10)
 	if err != nil {
 		t.Fatalf("ListObjects failed: %v", err)
 	}
@@ -1480,7 +1480,7 @@ func TestFolderObjects(t *testing.T) {
 		}
 
 		// List objects - folder should be included
-		objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
+		objects, _, _, err := store.ListObjects(bucketName, "", "", "", 0)
 		if err != nil {
 			t.Fatalf("ListObjects failed: %v", err)
 		}
@@ -1606,7 +1606,7 @@ func TestFolderObjects(t *testing.T) {
 		}
 
 		// List all objects - should find both
-		objects, _, err := store.ListObjects(bucketName, "", "", "", 0)
+		objects, _, _, err := store.ListObjects(bucketName, "", "", "", 0)
 		if err != nil {
 			t.Fatalf("ListObjects failed: %v", err)
 		}
@@ -1629,7 +1629,7 @@ func TestFolderObjects(t *testing.T) {
 		}
 
 		// List with prefix - should find folder and nested
-		objects, _, err = store.ListObjects(bucketName, "parentfolder/", "", "", 0)
+		objects, _, _, err = store.ListObjects(bucketName, "parentfolder/", "", "", 0)
 		if err != nil {
 			t.Fatalf("ListObjects with prefix failed: %v", err)
 		}
@@ -1675,7 +1675,7 @@ func TestFolderObjects(t *testing.T) {
 		}
 
 		// List with delimiter "/" - should return rootfile.txt and common prefix "rootfolder/"
-		objects, prefixes, err := store.ListObjects(bucketName, "", "/", "", 0)
+		objects, prefixes, _, err := store.ListObjects(bucketName, "", "/", "", 0)
 		if err != nil {
 			t.Fatalf("ListObjects with delimiter failed: %v", err)
 		}
@@ -1700,6 +1700,50 @@ func TestFolderObjects(t *testing.T) {
 		}
 		if !foundPrefix {
 			t.Error("rootfolder/ not found in common prefixes")
+		}
+	})
+
+	t.Run("ListWithDelimiterMaxKeysLimitsTotal", func(t *testing.T) {
+		bucketName := "test-delimiter-maxkeys"
+		err := store.CreateBucket(bucketName)
+		if err != nil {
+			t.Fatalf("CreateBucket failed: %v", err)
+		}
+
+		// Create objects that produce both contents and common prefixes with delimiter "/"
+		// Root-level files: a.txt, b.txt, e.txt
+		// Directories (common prefixes): c/, d/
+		for _, key := range []string{"a.txt", "b.txt", "c/file.txt", "d/file.txt", "e.txt"} {
+			_, err := store.PutObject(bucketName, key, bytes.NewReader([]byte("data")), Metadata{}, "")
+			if err != nil {
+				t.Fatalf("PutObject %s failed: %v", key, err)
+			}
+		}
+
+		// List with delimiter "/" and maxKeys=3 - should return only 3 total items
+		// In sorted order: a.txt, b.txt, c/, d/, e.txt
+		// With maxKeys=3, should return: a.txt, b.txt, c/
+		objects, prefixes, _, err := store.ListObjects(bucketName, "", "/", "", 3)
+		if err != nil {
+			t.Fatalf("ListObjects with delimiter and maxKeys failed: %v", err)
+		}
+
+		totalCount := len(objects) + len(prefixes)
+		if totalCount != 3 {
+			t.Errorf("Expected 3 total items (objects + prefixes), got %d (objects=%d, prefixes=%d)",
+				totalCount, len(objects), len(prefixes))
+		}
+
+		// List with no limit should return all 5 items
+		objects, prefixes, _, err = store.ListObjects(bucketName, "", "/", "", 0)
+		if err != nil {
+			t.Fatalf("ListObjects without limit failed: %v", err)
+		}
+
+		totalCount = len(objects) + len(prefixes)
+		if totalCount != 5 {
+			t.Errorf("Expected 5 total items without limit, got %d (objects=%d, prefixes=%d)",
+				totalCount, len(objects), len(prefixes))
 		}
 	})
 }

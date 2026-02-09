@@ -334,18 +334,19 @@ func (s *Storage) DeleteObject(bucket, key string) error {
 }
 
 // ListObjects lists objects in a bucket with optional prefix, delimiter, and marker for pagination
-func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys int) ([]ObjectInfo, []string, error) {
+func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys int) ([]ObjectInfo, []string, string, error) {
 	if !s.BucketExists(bucket) {
-		return nil, nil, ErrBucketNotFound
+		return nil, nil, "", ErrBucketNotFound
 	}
 
-	bucketPath, err := s.safePath(bucket, "")
+	bucketPath, err := s.safePath(bucket, prefix)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", fmt.Errorf("invalid prefix: %v", err)
 	}
 
+	var nextContinuationToken string
 	var objects []ObjectInfo
-	commonPrefixes := make(map[string]bool)
+	commonPrefixes := map[string]struct{}{}
 
 	err = filepath.Walk(bucketPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -357,94 +358,97 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 			return nil
 		}
 
-		// Check if this is a meta file (all objects have meta files)
-		if filepath.Base(path) == metaFile && !info.IsDir() {
-			objectDir := filepath.Dir(path)
-			objectKey, err := filepath.Rel(bucketPath, objectDir)
-			if err != nil {
-				return nil
-			}
-			objectKey = filepath.ToSlash(objectKey)
-
-			// Load metadata first to determine if this is a directory object
-			metadata, _ := loadObjectMetadata(path)
-			if metadata == nil {
-				return nil
-			}
-
-			// Reconstruct the original key with trailing slash for directory objects
-			if metadata.IsDir {
-				objectKey = objectKey + "/"
-			}
-
-			// Apply prefix filter
-			if prefix != "" && !strings.HasPrefix(objectKey, prefix) {
-				return nil
-			}
-
-			// Apply marker filter - only include objects after the marker
-			if marker != "" && objectKey <= marker {
-				return nil
-			}
-
-			// Handle delimiter
-			if delimiter != "" {
-				relativeKey := strings.TrimPrefix(objectKey, prefix)
-				if idx := strings.Index(relativeKey, delimiter); idx != -1 {
-					// This is a common prefix
-					commonPrefix := prefix + relativeKey[:idx+len(delimiter)]
-					commonPrefixes[commonPrefix] = true
-					return nil
-				}
-			}
-
-			var size int64
-
-			// Check if data is inline or in content-addressable storage
-			if len(metadata.Data) > 0 {
-				// Data is inline
-				size = int64(len(metadata.Data))
-			} else if metadata.Digest != "" {
-				// Data is in content-addressable storage
-				objPath, err := s.objectPath(metadata.Digest)
-				if err != nil {
-					return fmt.Errorf("invalid digest for object %s: %v", objectKey, err)
-				}
-				dataInfo, err := os.Stat(objPath)
-				if err != nil {
-					return fmt.Errorf("failed to stat content-addressed object for %s: %v", objectKey, err)
-				}
-				size = dataInfo.Size()
-			}
-			// else: size is 0 (empty/zero-byte object, including folder objects)
-
-			// Always use meta file's ModTime
-			objects = append(objects, ObjectInfo{
-				Key:            objectKey,
-				Size:           size,
-				ETag:           metadata.ETag,
-				ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
-				ModTime:        info.ModTime(),
-				Metadata:       metadata.Metadata,
-			})
+		if info.IsDir() {
+			return nil
 		}
 
+		objectDir, filename := filepath.Split(path)
+		if filename != metaFile {
+			return nil
+		}
+
+		objectKey, err := filepath.Rel(bucketPath, objectDir)
+		if err != nil {
+			return nil
+		}
+		objectKey = filepath.Join(".", prefix, objectKey)
+
+		// Load metadata first to determine if this is a directory object
+		metadata, _ := loadObjectMetadata(path)
+		if metadata == nil {
+			return nil
+		}
+
+		// Reconstruct the original key with trailing slash for directory objects
+		if metadata.IsDir {
+			objectKey = objectKey + "/"
+		}
+
+		// Apply marker filter - only include objects after the marker
+		if marker != "" && objectKey <= marker {
+			return nil
+		}
+
+		// Handle delimiter
+		if delimiter != "" {
+			relativeKey := strings.TrimPrefix(objectKey, prefix)
+			if idx := strings.Index(relativeKey, delimiter); idx != -1 {
+				// This is a common prefix
+				commonPrefix := prefix + relativeKey[:idx+len(delimiter)]
+				commonPrefixes[commonPrefix] = struct{}{}
+				if maxKeys > 0 && len(objects)+len(commonPrefixes) >= maxKeys {
+					nextContinuationToken = commonPrefix
+					return filepath.SkipAll
+				}
+				return nil
+			}
+		}
+
+		var size int64
+
+		// Check if data is inline or in content-addressable storage
+		if len(metadata.Data) > 0 {
+			// Data is inline
+			size = int64(len(metadata.Data))
+		} else if metadata.Digest != "" {
+			// Data is in content-addressable storage
+			objPath, err := s.objectPath(metadata.Digest)
+			if err != nil {
+				return fmt.Errorf("invalid digest for object %s: %v", objectKey, err)
+			}
+			dataInfo, err := os.Stat(objPath)
+			if err != nil {
+				return fmt.Errorf("failed to stat content-addressed object for %s: %v", objectKey, err)
+			}
+			size = dataInfo.Size()
+		}
+		// else: size is 0 (empty/zero-byte object, including folder objects)
+
+		// Always use meta file's ModTime
+		objects = append(objects, ObjectInfo{
+			Key:            objectKey,
+			Size:           size,
+			ETag:           metadata.ETag,
+			ChecksumSHA256: urlSafeToStdBase64(metadata.ETag),
+			ModTime:        info.ModTime(),
+			Metadata:       metadata.Metadata,
+		})
+
+		if maxKeys > 0 && len(objects)+len(commonPrefixes) >= maxKeys {
+			nextContinuationToken = objectKey
+			return filepath.SkipAll
+		}
 		return nil
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	// Sort objects by key
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].Key < objects[j].Key
 	})
-
-	// Apply maxKeys limit
-	if maxKeys > 0 && len(objects) > maxKeys {
-		objects = objects[:maxKeys]
-	}
 
 	// Convert common prefixes to sorted slice
 	var prefixes []string
@@ -453,7 +457,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 	}
 	sort.Strings(prefixes)
 
-	return objects, prefixes, nil
+	return objects, prefixes, nextContinuationToken, nil
 }
 
 // CopyObject copies an object from one location to another
