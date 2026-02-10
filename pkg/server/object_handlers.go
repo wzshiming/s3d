@@ -250,9 +250,9 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	if maxKeys == 0 {
 		result := ListBucketResult{
 			Name:         bucket,
-			Prefix:       encodeKey(prefix, encodingType),
-			Marker:       encodeKey(marker, encodingType),
-			Delimiter:    encodeKey(delimiter, encodingType),
+			Prefix:       prefix,
+			Marker:       marker,
+			Delimiter:    delimiter,
 			EncodingType: encodingType,
 			MaxKeys:      maxKeys,
 		}
@@ -269,13 +269,13 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 
 	result := ListBucketResult{
 		Name:         bucket,
-		Prefix:       encodeKey(prefix, encodingType),
-		Marker:       encodeKey(marker, encodingType),
-		Delimiter:    encodeKey(delimiter, encodingType),
+		Prefix:       prefix,
+		Marker:       marker,
+		Delimiter:    delimiter,
 		EncodingType: encodingType,
 		MaxKeys:      maxKeys,
 		IsTruncated:  nextMarker != "",
-		NextMarker:   encodeKey(nextMarker, encodingType),
+		NextMarker:   nextMarker,
 	}
 
 	for _, obj := range objects {
@@ -318,10 +318,10 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	if maxKeys == 0 {
 		result := ListBucketResultV2{
 			Name:         bucket,
-			Prefix:       encodeKey(prefix, encodingType),
-			Delimiter:    encodeKey(delimiter, encodingType),
+			Prefix:       prefix,
+			Delimiter:    delimiter,
 			EncodingType: encodingType,
-			StartAfter:   encodeKey(startAfter, encodingType),
+			StartAfter:   startAfter,
 			MaxKeys:      maxKeys,
 		}
 
@@ -344,13 +344,13 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 
 	result := ListBucketResultV2{
 		Name:                  bucket,
-		Prefix:                encodeKey(prefix, encodingType),
-		Delimiter:             encodeKey(delimiter, encodingType),
+		Prefix:                prefix,
+		Delimiter:             delimiter,
 		EncodingType:          encodingType,
 		MaxKeys:               maxKeys,
 		KeyCount:              len(objects) + len(commonPrefixes),
 		IsTruncated:           nextContinuationToken != "",
-		StartAfter:            encodeKey(startAfter, encodingType),
+		StartAfter:            startAfter,
 		ContinuationToken:     continuationToken,
 		NextContinuationToken: nextContinuationToken,
 	}
