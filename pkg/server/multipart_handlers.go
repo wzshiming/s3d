@@ -22,11 +22,7 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 
 	uploadID, err := s.storage.InitiateMultipartUpload(bucket, key, metadata)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -43,7 +39,7 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, bucket, key, uploadID, partNumberStr string) {
 	partNumber, err := strconv.Atoi(partNumberStr)
 	if err != nil {
-		s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
 		return
 	}
 
@@ -58,18 +54,7 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body, expectedChecksumSHA256)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrInvalidUploadID:
-			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		case storage.ErrInvalidPartNumber:
-			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
-		case storage.ErrChecksumMismatch:
-			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -84,7 +69,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	// Parse x-amz-copy-source header
 	copySource := r.Header.Get("x-amz-copy-source")
 	if copySource == "" {
-		s.errorResponse(w, r, "InvalidArgument", "Copy source header is required", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Copy source header is required", http.StatusBadRequest)
 		return
 	}
 
@@ -94,7 +79,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	// Parse source bucket and key
 	parts := strings.SplitN(copySource, "/", 2)
 	if len(parts) != 2 {
-		s.errorResponse(w, r, "InvalidArgument", "Invalid copy source format", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Invalid copy source format", http.StatusBadRequest)
 		return
 	}
 
@@ -104,7 +89,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	// URL decode the source key (S3 object keys in copy source can be URL-encoded)
 	decodedSrcKey, err := url.QueryUnescape(srcKey)
 	if err != nil {
-		s.errorResponse(w, r, "InvalidArgument", "Invalid URL encoding in copy source", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Invalid URL encoding in copy source", http.StatusBadRequest)
 		return
 	}
 
@@ -114,7 +99,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	if copySourceRange != "" {
 		startByte, endByte, err = parseByteRange(copySourceRange)
 		if err != nil {
-			s.errorResponse(w, r, "InvalidArgument", "Invalid copy source range format", http.StatusBadRequest)
+			s.response(w, r, "InvalidArgument", "Invalid copy source range format", http.StatusBadRequest)
 			return
 		}
 	}
@@ -122,20 +107,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	// Perform copy to part
 	objInfo, err := s.storage.UploadPartCopy(bucket, key, uploadID, partNumber, srcBucket, decodedSrcKey, startByte, endByte)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrObjectNotFound:
-			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		case storage.ErrInvalidUploadID:
-			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		case storage.ErrInvalidPartNumber:
-			s.errorResponse(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
-		case storage.ErrInvalidRange:
-			s.errorResponse(w, r, "InvalidRange", "The requested range is not valid", http.StatusRequestedRangeNotSatisfiable)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -177,7 +149,7 @@ func parseByteRange(rangeHeader string) (int64, int64, error) {
 func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	var req CompleteMultipartUpload
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, r, "MalformedXML", "Invalid XML", http.StatusBadRequest)
+		s.response(w, r, "MalformedXML", "Invalid XML", http.StatusBadRequest)
 		return
 	}
 
@@ -185,7 +157,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 	parts := make([]storage.Multipart, 0, len(req.Parts))
 	for _, p := range req.Parts {
 		if len(parts) > 0 && parts[len(parts)-1].PartNumber+1 != p.PartNumber {
-			s.errorResponse(w, r, "InvalidPartOrder", "Parts are not in ascending order", http.StatusBadRequest)
+			s.response(w, r, "InvalidPartOrder", "Parts are not in ascending order", http.StatusBadRequest)
 			return
 		}
 
@@ -201,16 +173,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 
 	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts, expectedChecksumSHA256)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrInvalidUploadID:
-			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		case storage.ErrChecksumMismatch:
-			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -229,14 +192,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 func (s *S3Handler) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	err := s.storage.AbortMultipartUpload(bucket, key, uploadID)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrInvalidUploadID:
-			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -258,43 +214,20 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 	}
 
 	// Fetch one extra upload to determine if there are more results
-	uploads, err := s.storage.ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker, maxUploads+1)
+	uploads, nextKeyMarker, nextUploadIDMarker, err := s.storage.ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker, maxUploads)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
-	// Determine if results are truncated
-	isTruncated := len(uploads) > maxUploads
-	var nextKeyMarker, nextUploadIDMarker string
-	if isTruncated {
-		// Remove the extra upload
-		uploads = uploads[:maxUploads]
-		// Set next markers to the last upload
-		if len(uploads) > 0 {
-			nextKeyMarker = uploads[len(uploads)-1].Key
-			nextUploadIDMarker = uploads[len(uploads)-1].UploadID
-		}
-	}
-
 	result := ListMultipartUploadsResult{
-		Bucket:      bucket,
-		MaxUploads:  maxUploads,
-		IsTruncated: isTruncated,
-		KeyMarker:   keyMarker,
-	}
-
-	if uploadIDMarker != "" {
-		result.UploadIdMarker = uploadIDMarker
-	}
-
-	if isTruncated {
-		result.NextKeyMarker = nextKeyMarker
-		result.NextUploadIdMarker = nextUploadIDMarker
+		Bucket:             bucket,
+		MaxUploads:         maxUploads,
+		IsTruncated:        nextKeyMarker != "" || nextUploadIDMarker != "",
+		KeyMarker:          keyMarker,
+		UploadIdMarker:     uploadIDMarker,
+		NextKeyMarker:      nextKeyMarker,
+		NextUploadIdMarker: nextUploadIDMarker,
 	}
 
 	for _, upload := range uploads {
@@ -312,12 +245,8 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 // handleListParts handles ListParts operation
 func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, bucket, key, uploadID string) {
 	query := r.URL.Query()
-	partNumberMarker := 0
-	if pnm := query.Get("part-number-marker"); pnm != "" {
-		if parsed, err := strconv.Atoi(pnm); err == nil {
-			partNumberMarker = parsed
-		}
-	}
+	partNumberMarker := query.Get("part-number-marker")
+
 	maxParts := 1000
 	if mp := query.Get("max-parts"); mp != "" {
 		if parsed, err := strconv.Atoi(mp); err == nil {
@@ -326,46 +255,21 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	// Fetch one extra part to determine if there are more results
-	parts, err := s.storage.ListParts(bucket, key, uploadID, partNumberMarker, maxParts+1)
+	parts, nextPartNumberMarker, err := s.storage.ListParts(bucket, key, uploadID, partNumberMarker, maxParts)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrInvalidUploadID:
-			s.errorResponse(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
-	// Determine if results are truncated
-	isTruncated := len(parts) > maxParts
-	var nextPartNumberMarker int
-	if isTruncated {
-		// Remove the extra part
-		parts = parts[:maxParts]
-		// Set next marker to the last part number
-		if len(parts) > 0 {
-			nextPartNumberMarker = parts[len(parts)-1].PartNumber
-		}
-	}
-
 	result := ListPartsResult{
-		Bucket:       bucket,
-		Key:          key,
-		UploadId:     uploadID,
-		StorageClass: "STANDARD",
-		MaxParts:     maxParts,
-		IsTruncated:  isTruncated,
-	}
-
-	if partNumberMarker > 0 {
-		result.PartNumberMarker = partNumberMarker
-	}
-
-	if isTruncated {
-		result.NextPartNumberMarker = nextPartNumberMarker
+		Bucket:               bucket,
+		Key:                  key,
+		UploadId:             uploadID,
+		StorageClass:         "STANDARD",
+		MaxParts:             maxParts,
+		IsTruncated:          nextPartNumberMarker != "",
+		PartNumberMarker:     partNumberMarker,
+		NextPartNumberMarker: nextPartNumberMarker,
 	}
 
 	for _, part := range parts {

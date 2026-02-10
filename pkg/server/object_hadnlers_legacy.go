@@ -27,18 +27,18 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 		// Validate policy conditions (expiration, bucket, key, content-length, etc.)
 		policyBytes, err := base64.StdEncoding.DecodeString(policy)
 		if err != nil {
-			s.errorResponse(w, r, "InvalidArgument", fmt.Sprintf("Invalid Policy: base64 decoding failed: %v", err), http.StatusBadRequest)
+			s.response(w, r, "InvalidArgument", fmt.Sprintf("Invalid Policy: base64 decoding failed: %v", err), http.StatusBadRequest)
 			return
 		}
 
 		var policyDoc postPolicy
 		if err := json.Unmarshal(policyBytes, &policyDoc); err != nil {
-			s.errorResponse(w, r, "InvalidArgument", fmt.Sprintf("Invalid Policy: JSON parsing failed: %v, %q", err, policy), http.StatusBadRequest)
+			s.response(w, r, "InvalidArgument", fmt.Sprintf("Invalid Policy: JSON parsing failed: %v, %q", err, policy), http.StatusBadRequest)
 			return
 		}
 
 		if err := validatePostPolicy(r, policyDoc, bucket, key); err != nil {
-			s.errorResponse(w, r, "Denied", err.Error(), http.StatusForbidden)
+			s.response(w, r, "Denied", err.Error(), http.StatusForbidden)
 			return
 		}
 	}
@@ -46,7 +46,7 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 	// Handle ${filename} substitution in key
 	file, fileHeader, err := r.FormFile("file")
 	if err != nil {
-		s.errorResponse(w, r, "InvalidArgument", "Bucket POST must contain a field named 'file'.", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Bucket POST must contain a field named 'file'.", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
@@ -79,12 +79,7 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 
 	objInfo, err := s.storage.PutObject(bucket, key, file, metadata, "")
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 

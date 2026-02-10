@@ -3,8 +3,6 @@ package server
 import (
 	"net/http"
 	"strconv"
-
-	"github.com/wzshiming/s3d/pkg/storage"
 )
 
 // handleListBuckets handles ListBuckets operation
@@ -22,22 +20,10 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch one extra bucket to determine if there are more results
-	buckets, err := s.storage.ListBuckets(prefix, continuationToken, maxBuckets+1)
+	buckets, nextContinuationToken, err := s.storage.ListBuckets(prefix, continuationToken, maxBuckets)
 	if err != nil {
-		s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		s.errorResponse(w, r, err)
 		return
-	}
-
-	// Determine if results are truncated
-	isTruncated := len(buckets) > maxBuckets
-	var nextContinuationToken string
-	if isTruncated {
-		// Remove the extra bucket
-		buckets = buckets[:maxBuckets]
-		// Set next continuation token to the last bucket name
-		if len(buckets) > 0 {
-			nextContinuationToken = buckets[len(buckets)-1].Name
-		}
 	}
 
 	result := ListAllMyBucketsResult{
@@ -45,11 +31,8 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 			ID:          "local-user",
 			DisplayName: "local-user",
 		},
-		Prefix: prefix,
-	}
-
-	if isTruncated {
-		result.ContinuationToken = nextContinuationToken
+		Prefix:            prefix,
+		ContinuationToken: nextContinuationToken,
 	}
 
 	for _, b := range buckets {
@@ -66,11 +49,7 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	err := s.storage.CreateBucket(bucket)
 	if err != nil {
-		if err == storage.ErrBucketAlreadyExists {
-			s.errorResponse(w, r, "BucketAlreadyExists", "Bucket already exists", http.StatusConflict)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -82,11 +61,7 @@ func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, b
 func (s *S3Handler) handleDeleteBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	err := s.storage.DeleteBucket(bucket)
 	if err != nil {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 

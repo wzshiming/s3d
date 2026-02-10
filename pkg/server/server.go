@@ -45,7 +45,7 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			s.handleListBuckets(w, r)
 		} else {
-			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+			s.notAllowedResponse(w, r)
 		}
 		return
 	}
@@ -55,10 +55,6 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(parts) > 1 {
 		key = parts[1]
 	}
-
-	// Normalize key: trim leading slashes (e.g., from URLs like /bucket//key or /bucket/)
-	// This handles cases where s3fs-fuse requests /bucket// to access the root directory
-	key = strings.TrimPrefix(key, "/")
 
 	query := r.URL.Query()
 	if key == "" {
@@ -77,14 +73,14 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 				s.handlePostObject(w, r, bucket)
 			} else {
-				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+				s.notAllowedResponse(w, r)
 			}
 		case http.MethodDelete:
 			s.handleDeleteBucket(w, r, bucket)
 		case http.MethodHead:
 			s.handleHeadBucket(w, r, bucket)
 		default:
-			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+			s.notAllowedResponse(w, r)
 		}
 	} else {
 		switch r.Method {
@@ -95,7 +91,7 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				uploadID := query.Get("uploadId")
 				s.handleCompleteMultipartUpload(w, r, bucket, key, uploadID)
 			} else {
-				s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+				s.notAllowedResponse(w, r)
 			}
 		case http.MethodPut:
 			if query.Has("uploadId") {
@@ -103,7 +99,7 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					uploadID := query.Get("uploadId")
 					s.handleUploadPart(w, r, bucket, key, uploadID, partNumber)
 				} else {
-					s.errorResponse(w, r, "MissingParameter", "Missing partNumber parameter", http.StatusBadRequest)
+					s.response(w, r, "MissingParameter", "Missing partNumber parameter", http.StatusBadRequest)
 				}
 			} else {
 				s.handlePutObject(w, r, bucket, key)
@@ -125,7 +121,7 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.handleDeleteObject(w, r, bucket, key)
 			}
 		default:
-			s.errorResponse(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
+			s.notAllowedResponse(w, r)
 		}
 	}
 }

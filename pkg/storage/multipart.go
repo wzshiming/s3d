@@ -1,22 +1,86 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/google/uuid"
+	bolt "go.etcd.io/bbolt"
 )
 
-// genUploadID generates a unique upload ID using UUID
-func genUploadID() string {
-	return uuid.New().String()
+func (s *Storage) uploadPath(bucket, key, uploadID string) string {
+	return filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+}
+
+func (s *Storage) getUploadMetadata(bucket, key, uploadID string) (*uploadMetadata, error) {
+	var metadata uploadMetadata
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(uploadsBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		val := b.Get([]byte(uploadID))
+		if val == nil {
+			return ErrObjectNotFound
+		}
+		decoder := gob.NewDecoder(bytes.NewReader(val))
+		if err := decoder.Decode(&metadata); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if metadata.Key != key {
+		return nil, ErrUploadNotFound
+	}
+	return &metadata, nil
+}
+
+func (s *Storage) putUploadMetadata(bucket, key string, metadata *uploadMetadata) (uploadID string, err error) {
+	var buf bytes.Buffer
+	metadata.Key = key
+	encoder := gob.NewEncoder(&buf)
+	err = encoder.Encode(metadata)
+	if err != nil {
+		return "", err
+	}
+
+	err = s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(uploadsBucketPrefix + bucket))
+		id, err := b.NextSequence()
+		if err != nil {
+			return err
+		}
+		uploadID = fmt.Sprintf("s-%d", id)
+		return b.Put([]byte(uploadID), buf.Bytes())
+	})
+	if err != nil {
+		return "", err
+	}
+	return uploadID, nil
+}
+
+func (s *Storage) deleteUploadMetadata(bucket, key, uploadID string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(uploadsBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		return b.Delete([]byte(uploadID))
+	})
 }
 
 // InitiateMultipartUpload initiates a multipart upload
@@ -25,28 +89,20 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, userMetadata Metad
 		return "", ErrBucketNotFound
 	}
 
-	// Validate paths
-	if err := sanitizeBucketName(bucket); err != nil {
-		return "", err
-	}
-	if err := sanitizeObjectKey(key); err != nil {
-		return "", err
-	}
-
-	// Generate upload ID
-	uploadID := genUploadID()
-
-	// Create upload directory in .uploads/bucket/key/uploadID
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		return "", err
-	}
-
-	uploadMetaPath := filepath.Join(uploadDir, metaFile)
 	metadata := &uploadMetadata{
 		Metadata: userMetadata,
+		ModTime:  time.Now(),
 	}
-	if err := saveUploadMetadata(uploadMetaPath, metadata); err != nil {
+
+	// Store upload metadata in BoltDB for listing
+	uploadID, err := s.putUploadMetadata(bucket, key, metadata)
+	if err != nil {
+		return "", err
+	}
+
+	// Create upload directory in .uploads/bucket/key/uploadID
+	uploadDir := filepath.Join(s.uploadsDir, bucket, key, uploadID)
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return "", err
 	}
 
@@ -65,7 +121,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.uploadPath(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
@@ -88,8 +144,9 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	tmpFile.Close()
 
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	checksumSHA256 := urlSafeToStdBase64(etag)
+	sum := hash.Sum(nil)
+	etag := hex.EncodeToString(sum)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
 
 	// Validate checksum if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
@@ -109,15 +166,16 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 		return nil, err
 	}
 
-	// Load upload metadata for content type
-	uploadMetaPath := filepath.Join(uploadDir, metaFile)
-	metadata, _ := loadUploadMetadata(uploadMetaPath)
+	metadata, err := s.getUploadMetadata(bucket, key, uploadID)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ObjectInfo{
 		Key:            key,
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
@@ -136,7 +194,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.uploadPath(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
@@ -146,16 +204,8 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		return nil, ErrBucketNotFound
 	}
 
-	// Get source object directory
-	srcObjectDir, err := s.safePath(srcBucket, srcKey)
-	if err != nil {
-		return nil, err
-	}
-
-	srcMetaPath := filepath.Join(srcObjectDir, metaFile)
-
-	// Load source metadata
-	srcMetadata, err := loadObjectMetadata(srcMetaPath)
+	// Get source object metadata to determine size and validate byte range
+	srcMetadata, err := s.getObjectMetadata(srcBucket, srcKey)
 	if err != nil {
 		return nil, err
 	}
@@ -163,29 +213,10 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		return nil, ErrObjectNotFound
 	}
 
-	// Determine source data size
-	var srcSize int64
-	if len(srcMetadata.Data) > 0 {
-		srcSize = int64(len(srcMetadata.Data))
-	} else if srcMetadata.Digest != "" {
-		objPath, err := s.objectPath(srcMetadata.Digest)
-		if err != nil {
-			return nil, err
-		}
-		srcFileInfo, err := os.Stat(objPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, ErrObjectNotFound
-			}
-			return nil, err
-		}
-		srcSize = srcFileInfo.Size()
-	}
-
 	// Validate byte range if specified
 	hasRange := startByte >= 0
 	if hasRange {
-		if startByte > endByte || startByte >= srcSize || endByte >= srcSize {
+		if startByte > endByte || startByte >= srcMetadata.Size || endByte >= srcMetadata.Size {
 			return nil, ErrInvalidRange
 		}
 	}
@@ -209,13 +240,10 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		} else {
 			_, err = writer.Write(srcMetadata.Data)
 		}
-	} else if srcMetadata.Digest != "" {
+	} else if srcMetadata.Etag != "" {
 		// Data is in content-addressable storage
-		srcFile, err := s.getContentAddressedObject(srcMetadata.Digest)
+		srcFile, err := s.getContentAddressedObject(srcMetadata.Etag)
 		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, ErrObjectNotFound
-			}
 			return nil, err
 		}
 		defer srcFile.Close()
@@ -237,7 +265,9 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	tmpFile.Close()
 
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
+	sum := hash.Sum(nil)
+	etag := hex.EncodeToString(sum)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -252,18 +282,23 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		return nil, err
 	}
 
-	// Load upload metadata for content type
-	uploadMetaPath := filepath.Join(uploadDir, metaFile)
-	metadata, _ := loadUploadMetadata(uploadMetaPath)
+	metadata, err := s.getUploadMetadata(bucket, key, uploadID)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ObjectInfo{
 		Key:            key,
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
+		ChecksumSHA256: checksumSHA256,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
+}
+
+func normalEtag(etag string) string {
+	return strings.Trim(etag, "\"")
 }
 
 // CompleteMultipartUpload completes a multipart upload
@@ -273,139 +308,94 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 
 	// Check filesystem for upload directory if not in memory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.uploadPath(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return nil, ErrInvalidUploadID
 	}
 
-	objectDir, err := s.safePath(bucket, key)
-	if err != nil {
-		return nil, err
-	}
-
-	metaPath := filepath.Join(objectDir, metaFile)
-
-	// Create object directory
-	if err := os.MkdirAll(objectDir, 0755); err != nil {
-		return nil, err
-	}
-
-	// Create temp file for final object
+	// Create temp file for the complete object
 	tmpFile, err := s.tempFile()
 	if err != nil {
 		return nil, err
 	}
 	defer os.Remove(tmpFile.Name())
 
+	// Assemble parts into temp file and calculate SHA256
 	hash := sha256.New()
+	writer := io.MultiWriter(tmpFile, hash)
 
-	// Concatenate parts in order
 	for _, part := range parts {
-		// Strip quotes from ETag if present (client may send quoted ETags)
-		etag := strings.Trim(part.ETag, `"`)
-
-		// Validate part checksum if provided
-		if part.ChecksumSHA256 != "" {
-			expectedPartChecksum := urlSafeToStdBase64(etag)
-			if part.ChecksumSHA256 != expectedPartChecksum {
-				tmpFile.Close()
-				return nil, ErrChecksumMismatch
-			}
+		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, normalEtag(part.ETag)))
+		partFile, err := os.Open(partPath)
+		if err != nil {
+			tmpFile.Close()
+			return nil, fmt.Errorf("failed to open part file: %v", err)
 		}
 
-		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, etag))
-		partFile, err := os.Open(partPath)
+		_, err = io.Copy(writer, partFile)
+		partFile.Close()
 		if err != nil {
 			tmpFile.Close()
 			return nil, err
 		}
-
-		if _, err := io.Copy(io.MultiWriter(tmpFile, hash), partFile); err != nil {
-			partFile.Close()
-			tmpFile.Close()
-			return nil, err
-		}
-		partFile.Close()
 	}
+
 	tmpFile.Close()
 
-	// Get file size to determine storage method
+	// Check file size to determine if it should be inlined
 	fileInfo, err := os.Stat(tmpFile.Name())
 	if err != nil {
 		return nil, err
 	}
 
-	// Store metadata - use URL-safe base64 encoded SHA256
-	etag := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-
-	checksumSHA256 := urlSafeToStdBase64(etag)
+	sum := hash.Sum(nil)
+	etag := hex.EncodeToString(sum)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
 
 	// Validate checksum if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
 		return nil, ErrChecksumMismatch
 	}
 
-	uploadMetaPath := filepath.Join(uploadDir, metaFile)
-	uploadMetadata, err := loadUploadMetadata(uploadMetaPath)
+	// Move temp file to final object location
+	err = s.storeContentAddressedObject(tmpFile.Name(), etag)
 	if err != nil {
 		return nil, err
 	}
 
-	var existingMetadata *objectMetadata
-	if _, err := os.Stat(metaPath); err == nil {
-		existingMetadata, _ = loadObjectMetadata(metaPath)
+	// Load upload metadata for user metadata
+	uploadMetadata, err := s.getUploadMetadata(bucket, key, uploadID)
+	if err != nil {
+		return nil, err
 	}
 
-	// Use content-addressable storage for all multipart uploads (they're typically large)
-	digest := hex.EncodeToString(hash.Sum(nil))
-
-	// Create object metadata from upload metadata
-	meta := &objectMetadata{
-		ETag:     etag,
-		Digest:   digest,
+	metadata := &objectMetadata{
+		Size:     fileInfo.Size(),
+		Etag:     etag,
+		Sha256:   checksumSHA256,
 		Metadata: uploadMetadata.Metadata,
+		ModTime:  fileInfo.ModTime(),
 	}
 
-	// Store in content-addressable storage
-	if err := s.storeContentAddressedObject(tmpFile.Name(), digest); err != nil {
+	if err := s.putObjectMetadata(bucket, key, metadata); err != nil {
 		return nil, err
 	}
 
-	if err := saveObjectMetadata(metaPath, meta); err != nil {
-		return nil, err
-	}
-	// Decrement refcount for old object if it had a digest and it's different
-	// Check if object already exists at destination and load metadata
-	if existingMetadata != nil && existingMetadata.Digest != "" && existingMetadata.Digest != digest {
-		s.decrementRefCount(existingMetadata.Digest)
-	}
-
-	// Always use meta file's ModTime
-	metaFileInfo, err := os.Stat(metaPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the uploads base directory as the stop point
-	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
-
-	// Store the parent directory before deletion
-	parentDir := filepath.Dir(uploadDir)
-
+	// Cleanup: delete upload directory and metadata
 	if err := os.RemoveAll(uploadDir); err != nil {
 		return nil, err
 	}
-
-	// Clean up empty parent directories
-	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
+	if err := s.deleteUploadMetadata(bucket, key, uploadID); err != nil {
+		return nil, err
+	}
 
 	return &ObjectInfo{
 		Key:            key,
-		Size:           fileInfo.Size(),
-		ETag:           etag,
-		ChecksumSHA256: urlSafeToStdBase64(etag),
-		ModTime:        metaFileInfo.ModTime(),
-		Metadata:       uploadMetadata.Metadata,
+		Size:           metadata.Size,
+		ETag:           metadata.Etag,
+		ChecksumSHA256: metadata.Sha256,
+		ModTime:        metadata.ModTime,
+		Metadata:       metadata.Metadata,
 	}, nil
 }
 
@@ -416,149 +406,120 @@ func (s *Storage) AbortMultipartUpload(bucket, key, uploadID string) error {
 	}
 
 	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
+	uploadDir := s.uploadPath(bucket, key, uploadID)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		return ErrInvalidUploadID
 	}
 
-	// Get the uploads base directory as the stop point
-	uploadsBaseDir := filepath.Join(s.basePath, uploadsDir)
-
-	// Store the parent directory before deletion
-	parentDir := filepath.Dir(uploadDir)
-
 	if err := os.RemoveAll(uploadDir); err != nil {
 		return err
 	}
-
-	// Clean up empty parent directories
-	s.cleanupEmptyDirs(parentDir, uploadsBaseDir)
+	if err := s.deleteUploadMetadata(bucket, key, uploadID); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-// ListMultipartUploads lists all in-progress multipart uploads for a bucket
-// ListMultipartUploads lists multipart uploads with pagination support
-func (s *Storage) ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int) ([]MultipartUpload, error) {
+func (s *Storage) walkUploads(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int, walkFunc func(key, uploadID string, metadata *uploadMetadata) error) (nextKeyMarker, nextUploadIDMarker string, err error) {
+	var handledKeys int
+	err = s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(uploadsBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			uploadID := string(k)
+			var metadata uploadMetadata
+			decoder := gob.NewDecoder(bytes.NewReader(v))
+			if err := decoder.Decode(&metadata); err != nil {
+				continue
+			}
+
+			key := metadata.Key
+
+			if prefix != "" && !bytes.HasPrefix([]byte(key), []byte(prefix)) {
+				continue
+			}
+			if keyMarker != "" && key <= keyMarker {
+				continue
+			}
+			if uploadIDMarker != "" && key == keyMarker && uploadID <= uploadIDMarker {
+				continue
+			}
+
+			if err := walkFunc(key, uploadID, &metadata); err != nil {
+				return err
+			}
+
+			handledKeys++
+			if handledKeys >= maxUploads {
+				nextKeyMarker = key
+				nextUploadIDMarker = uploadID
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return nextKeyMarker, nextUploadIDMarker, nil
+}
+
+// ListMultipartUploads lists all in-progress multipart uploads with pagination support
+func (s *Storage) ListMultipartUploads(bucket, prefix, keyMarker, uploadIDMarker string, maxUploads int) (uploads []MultipartUpload, nextKeyMarker, nextUploadIDMarker string, err error) {
 	if !s.BucketExists(bucket) {
-		return nil, ErrBucketNotFound
+		return nil, "", "", ErrBucketNotFound
 	}
 
-	// Check filesystem for upload directory
-	uploadBaseDir := filepath.Join(s.basePath, uploadsDir, bucket)
-	if _, err := os.Stat(uploadBaseDir); os.IsNotExist(err) {
-		return nil, nil
-	}
-
-	var uploads []MultipartUpload
-
-	// Walk through the uploads directory
-	err := filepath.Walk(uploadBaseDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors
-		}
-
-		if !info.IsDir() {
-			return nil
-		}
-
-		// Get relative path from uploadBaseDir
-		relPath, err := filepath.Rel(uploadBaseDir, path)
-		if err != nil || relPath == "." {
-			return nil
-		}
-
-		// Check if this directory contains a meta file (indicating it's an upload directory)
-		metaPath := filepath.Join(path, metaFile)
-		if _, err := os.Stat(metaPath); os.IsNotExist(err) {
-			return nil // Not an upload directory, keep walking
-		}
-
-		// This is an upload directory: .uploads/bucket/key/uploadID
-		// Split the relative path to get key and uploadID
-		parts := strings.Split(filepath.ToSlash(relPath), "/")
-		if len(parts) < 2 {
-			return nil
-		}
-
-		uploadID := parts[len(parts)-1]
-		key := strings.Join(parts[:len(parts)-1], "/")
-
-		// Apply prefix filter
-		if prefix != "" && !strings.HasPrefix(key, prefix) {
-			return nil
-		}
-
-		// Apply marker filter
-		if keyMarker != "" {
-			if key < keyMarker {
-				return nil
-			}
-			if key == keyMarker && uploadIDMarker != "" && uploadID <= uploadIDMarker {
-				return nil
-			}
-		}
-
-		upload := MultipartUpload{
+	nextKeyMarker, nextUploadIDMarker, err = s.walkUploads(bucket, prefix, keyMarker, uploadIDMarker, maxUploads, func(key, uploadID string, metadata *uploadMetadata) error {
+		uploads = append(uploads, MultipartUpload{
 			UploadID: uploadID,
 			Bucket:   bucket,
 			Key:      key,
-			ModTime:  info.ModTime(),
-		}
-
-		uploads = append(uploads, upload)
+			ModTime:  metadata.ModTime,
+		})
 		return nil
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 
-	// Sort by key, then by upload ID
-	sort.Slice(uploads, func(i, j int) bool {
-		if uploads[i].Key != uploads[j].Key {
-			return uploads[i].Key < uploads[j].Key
-		}
-		return uploads[i].UploadID < uploads[j].UploadID
-	})
-
-	// Apply maxUploads limit
-	if maxUploads > 0 && len(uploads) > maxUploads {
-		uploads = uploads[:maxUploads]
-	}
-
-	return uploads, nil
+	return uploads, nextKeyMarker, nextUploadIDMarker, nil
 }
 
-// ListParts lists all uploaded parts for a multipart upload with pagination support
-func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker, maxParts int) ([]Part, error) {
-	if !s.BucketExists(bucket) {
-		return nil, ErrBucketNotFound
-	}
-
-	// Check filesystem for upload directory
-	uploadDir := filepath.Join(s.basePath, uploadsDir, bucket, key, uploadID)
-	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		return nil, ErrInvalidUploadID
-	}
-
-	entries, err := os.ReadDir(uploadDir)
+func (s *Storage) walkParts(bucket, key, uploadID string, partNumberMarker string, maxParts int, walkFn func(partNumber int, metadata *objectMetadata) error) (nextPartNumberMarker string, err error) {
+	uploadDir := s.uploadPath(bucket, key, uploadID)
+	files, err := os.ReadDir(uploadDir)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	var parts []Part
-	for _, entry := range entries {
-		if entry.IsDir() {
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() < files[j].Name()
+	})
+
+	var handledParts int
+
+	partNumberMarkerInt := 0
+	if partNumberMarker != "" {
+		partNumberMarkerInt, _ = strconv.Atoi(partNumberMarker)
+	}
+
+	if partNumberMarkerInt > 0 && partNumberMarkerInt > len(files) {
+		return "", nil
+	}
+
+	files = files[partNumberMarkerInt:]
+
+	for _, file := range files {
+		if file.IsDir() {
 			continue
 		}
 
-		name := entry.Name()
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
+		name := file.Name()
 		var partNumber int
 		var etag string
 		n, err := fmt.Sscanf(name, "%d-%s", &partNumber, &etag)
@@ -566,30 +527,50 @@ func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker, maxP
 			continue
 		}
 
-		// Apply marker filter
-		if partNumberMarker > 0 && partNumber <= partNumberMarker {
-			continue
+		partPath := filepath.Join(uploadDir, name)
+		partFileInfo, err := os.Stat(partPath)
+		if err != nil {
+			return "", err
 		}
 
-		part := Part{
+		metadata := &objectMetadata{
+			Size:     partFileInfo.Size(),
+			Etag:     etag,
+			ModTime:  partFileInfo.ModTime(),
+			Metadata: Metadata{},
+		}
+
+		if err := walkFn(partNumber, metadata); err != nil {
+			return "", err
+		}
+
+		handledParts++
+		if handledParts >= maxParts {
+			nextPartNumberMarker = strconv.Itoa(partNumber)
+			break
+		}
+	}
+
+	return nextPartNumberMarker, nil
+}
+
+// ListParts lists all uploaded parts for a multipart upload with pagination support
+func (s *Storage) ListParts(bucket, key, uploadID string, partNumberMarker string, maxParts int) (parts []Part, nextPartNumberMarker string, err error) {
+	if !s.BucketExists(bucket) {
+		return nil, "", ErrBucketNotFound
+	}
+
+	nextPartNumberMarker, err = s.walkParts(bucket, key, uploadID, partNumberMarker, maxParts, func(partNumber int, metadata *objectMetadata) error {
+		parts = append(parts, Part{
 			PartNumber: partNumber,
-			ETag:       etag,
-			Size:       info.Size(),
-			ModTime:    info.ModTime(),
-		}
-
-		parts = append(parts, part)
-	}
-
-	// Sort by part number
-	sort.Slice(parts, func(i, j int) bool {
-		return parts[i].PartNumber < parts[j].PartNumber
+			ETag:       metadata.Etag,
+			Size:       metadata.Size,
+			ModTime:    metadata.ModTime,
+		})
+		return nil
 	})
-
-	// Apply maxParts limit
-	if maxParts > 0 && len(parts) > maxParts {
-		parts = parts[:maxParts]
+	if err != nil {
+		return nil, "", err
 	}
-
-	return parts, nil
+	return parts, nextPartNumberMarker, nil
 }

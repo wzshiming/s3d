@@ -2,30 +2,31 @@ package storage
 
 import (
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
 const (
-	metaFile   = "meta"
 	uploadsDir = ".uploads"
 	tempDir    = ".temp"
 	objectsDir = ".objects"
-	refcountDB = "refcount.db"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
-	inlineThreshold = 4096
+	inlineThreshold = 1024
 )
 
 var (
 	// refcountBucket is the BoltDB bucket name for reference counts
 	refcountBucket = []byte("refcounts")
+
+	contentBucketPrefix  = "content::"
+	uploadsBucketPrefix  = "uploads::"
+	metadataBucketPrefix = "metadata::"
 )
 
 var (
@@ -38,6 +39,8 @@ var (
 	ErrInvalidObjectKey    = errors.New("invalid object key")
 	ErrChecksumMismatch    = errors.New("checksum mismatch")
 	ErrInvalidRange        = errors.New("invalid byte range")
+	ErrInvalidPart         = errors.New("invalid part")
+	ErrUploadNotFound      = errors.New("upload not found")
 )
 
 // Storage is the local filesystem storage backend
@@ -45,7 +48,8 @@ type Storage struct {
 	basePath   string
 	tempDir    string
 	objectsDir string
-	refcountDB *bolt.DB
+	uploadsDir string
+	db         *bolt.DB
 }
 
 // NewStorage creates a new local storage backend
@@ -65,8 +69,13 @@ func NewStorage(basePath string) (*Storage, error) {
 		return nil, err
 	}
 
+	uploadsDir := filepath.Join(absPath, uploadsDir)
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		return nil, err
+	}
+
 	// Open BoltDB for reference counting
-	dbPath := filepath.Join(absPath, refcountDB)
+	dbPath := filepath.Join(absPath, "s3d.db")
 	db, err := bolt.Open(dbPath, 0600, nil)
 	if err != nil {
 		return nil, err
@@ -86,7 +95,8 @@ func NewStorage(basePath string) (*Storage, error) {
 		basePath:   absPath,
 		tempDir:    tempDir,
 		objectsDir: objectsDir,
-		refcountDB: db,
+		uploadsDir: uploadsDir,
+		db:         db,
 	}
 
 	return s, nil
@@ -94,8 +104,8 @@ func NewStorage(basePath string) (*Storage, error) {
 
 // Close closes the storage backend and releases resources
 func (s *Storage) Close() error {
-	if s.refcountDB != nil {
-		return s.refcountDB.Close()
+	if s.db != nil {
+		return s.db.Close()
 	}
 	return nil
 }
@@ -104,94 +114,28 @@ func (s *Storage) tempFile() (*os.File, error) {
 	return os.CreateTemp(s.tempDir, "tmp-*")
 }
 
-// sanitizeBucketName validates and sanitizes bucket name
-func sanitizeBucketName(bucket string) error {
-	if bucket == "" || bucket == "." || bucket == ".." {
-		return ErrInvalidBucketName
-	}
-	if strings.Contains(bucket, "/") || strings.Contains(bucket, "\\") {
-		return ErrInvalidBucketName
-	}
-	if strings.HasPrefix(bucket, ".") {
-		return ErrInvalidBucketName
-	}
-	return nil
-}
-
-// sanitizeObjectKey validates and sanitizes object key
-func sanitizeObjectKey(key string) error {
-	if key == "" || key == "." || key == ".." {
-		return ErrInvalidObjectKey
-	}
-	// Check for path traversal attempts
-	if strings.Contains(key, "..") {
-		return ErrInvalidObjectKey
-	}
-	// Don't allow absolute paths
-	if strings.HasPrefix(key, "/") || strings.HasPrefix(key, "\\") {
-		return ErrInvalidObjectKey
-	}
-	return nil
-}
-
-// safePath returns the safe filesystem path for an object
-// Returns the object directory path (not the data file)
-func (s *Storage) safePath(bucket, key string) (string, error) {
-	if err := sanitizeBucketName(bucket); err != nil {
-		return "", err
-	}
-
-	bucketPath := filepath.Join(s.basePath, bucket)
-
-	if key == "" {
-		return bucketPath, nil
-	}
-
-	if err := sanitizeObjectKey(key); err != nil {
-		return "", err
-	}
-
-	// Object path is now a directory
-	objectPath := filepath.Join(bucketPath, key)
-
-	// Verify the path is within the bucket
-	absObjectPath, err := filepath.Abs(objectPath)
-	if err != nil {
-		return "", err
-	}
-
-	absBucketPath, err := filepath.Abs(bucketPath)
-	if err != nil {
-		return "", err
-	}
-
-	if !strings.HasPrefix(absObjectPath, absBucketPath+string(filepath.Separator)) {
-		return "", ErrInvalidObjectKey
-	}
-
-	return objectPath, nil
-}
-
 // objectMetadata represents object metadata
 type objectMetadata struct {
 	Metadata Metadata
 
-	ETag string
-	// Data stores the file content inline for small files (<=4096 bytes)
-	// If Data is not nil and not empty, it contains the entire file content
+	Size int64
+
 	Data []byte
-	// Digest stores the SHA256 digest (hex-encoded) for content-addressed storage
-	// When set, the actual data is stored in .objects/{digest[:2]}/{digest}
-	// If Data is set (inline storage), Digest is empty
-	Digest string
-	// IsDir indicates if the original key had a trailing slash (S3 directory object)
-	// When true, the key should be reconstructed with a trailing slash
-	IsDir bool
+
+	Etag string
+
+	Sha256 string
+
+	ModTime time.Time
 }
 
 // uploadMetadata represents multipart upload metadata
 type uploadMetadata struct {
 	Metadata Metadata
+
+	Key string
+
+	ModTime time.Time
 }
 
 func metadataEqual(a, b Metadata) bool {
@@ -215,131 +159,9 @@ func metadataEqual(a, b Metadata) bool {
 	return true
 }
 
-// saveObjectMetadata saves object metadata
-func saveObjectMetadata(path string, metadata *objectMetadata) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := gob.NewEncoder(file)
-	return encoder.Encode(metadata)
-}
-
-// loadObjectMetadata loads object metadata
-func loadObjectMetadata(path string) (*objectMetadata, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	var metadata objectMetadata
-	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
-}
-
-// saveUploadMetadata saves upload metadata
-func saveUploadMetadata(path string, metadata *uploadMetadata) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := gob.NewEncoder(file)
-	return encoder.Encode(metadata)
-}
-
-// loadUploadMetadata loads upload metadata
-func loadUploadMetadata(path string) (*uploadMetadata, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	var metadata uploadMetadata
-	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
-}
-
-// cleanupEmptyDirs removes empty parent directories up to but not including the stopDir
-// This function is best-effort and will not fail the operation if cleanup fails
-func (s *Storage) cleanupEmptyDirs(dir, stopDir string) {
-	// Make sure both paths are absolute for comparison
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return
-	}
-	absStopDir, err := filepath.Abs(stopDir)
-	if err != nil {
-		return
-	}
-
-	current := absDir
-	for {
-		// Stop if we've reached the stop directory
-		if current == absStopDir {
-			break
-		}
-
-		// Ensure current is within stopDir using filepath.Rel
-		rel, err := filepath.Rel(absStopDir, current)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			// Current is not within stopDir, stop
-			break
-		}
-
-		// Try to read the directory
-		entries, err := os.ReadDir(current)
-		if err != nil {
-			// If directory doesn't exist or can't be read, stop
-			break
-		}
-
-		// If directory is not empty, stop
-		if len(entries) > 0 {
-			break
-		}
-
-		// Directory is empty, remove it
-		if err := os.Remove(current); err != nil {
-			// If we can't remove it, stop
-			break
-		}
-
-		// Move to parent directory
-		current = filepath.Dir(current)
-	}
-}
-
-// objectPath returns the path to the content-addressed object file
-func (s *Storage) objectPath(digest string) (string, error) {
-	// Validate digest length (SHA256 hex is 64 characters)
-	if len(digest) < 2 {
-		return "", fmt.Errorf("invalid digest: %s", digest)
-	}
-	// Use first 2 characters for directory sharding to avoid too many files in one directory
-	return filepath.Join(s.objectsDir, digest[:2], digest), nil
-}
-
 // incrementRefCount increments the reference count for a content-addressed object using BoltDB
 func (s *Storage) incrementRefCount(digest string) error {
-	return s.refcountDB.Update(func(tx *bolt.Tx) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(refcountBucket)
 		if b == nil {
 			return fmt.Errorf("refcount bucket not found")
@@ -367,7 +189,7 @@ func (s *Storage) incrementRefCount(digest string) error {
 func (s *Storage) decrementRefCount(digest string) error {
 	var shouldDelete bool
 
-	err := s.refcountDB.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(refcountBucket)
 		if b == nil {
 			return fmt.Errorf("refcount bucket not found")
@@ -412,11 +234,9 @@ func (s *Storage) decrementRefCount(digest string) error {
 
 // deleteContentAddressedObject deletes a content-addressed object
 func (s *Storage) deleteContentAddressedObject(digest string) error {
-	objPath, err := s.objectPath(digest)
-	if err != nil {
-		return err
-	}
-	err = os.Remove(objPath)
+	objPath := s.objectsPath(digest)
+
+	err := os.Remove(objPath)
 	// Ignore "file not found" errors - the desired state is achieved
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -428,10 +248,7 @@ func (s *Storage) deleteContentAddressedObject(digest string) error {
 // Returns nil error on success
 // If the object already exists, it increments the reference count
 func (s *Storage) storeContentAddressedObject(srcPath string, digest string) error {
-	objPath, err := s.objectPath(digest)
-	if err != nil {
-		return err
-	}
+	objPath := s.objectsPath(digest)
 
 	// Check if object already exists
 	if _, err := os.Stat(objPath); err == nil {
@@ -444,7 +261,7 @@ func (s *Storage) storeContentAddressedObject(srcPath string, digest string) err
 		return err
 	}
 
-	err = os.Rename(srcPath, objPath)
+	err := os.Rename(srcPath, objPath)
 	if err != nil {
 		return err
 	}
@@ -455,9 +272,13 @@ func (s *Storage) storeContentAddressedObject(srcPath string, digest string) err
 
 // getContentAddressedObject opens a content-addressed object for reading
 func (s *Storage) getContentAddressedObject(digest string) (*os.File, error) {
-	objPath, err := s.objectPath(digest)
+	objPath := s.objectsPath(digest)
+	file, err := os.Open(objPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrObjectNotFound
+		}
 		return nil, err
 	}
-	return os.Open(objPath)
+	return file, nil
 }
