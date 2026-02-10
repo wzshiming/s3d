@@ -337,7 +337,7 @@ func pathEscape(p string) string {
 		if v == "" {
 			continue
 		}
-		item[i] = url.PathEscape(v)
+		item[i] = url.QueryEscape(v)
 	}
 	return strings.Join(item, "/")
 }
