@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/gob"
@@ -108,7 +109,8 @@ func (s *Storage) deleteObjectMetadata(bucket, key string) error {
 
 // PutObject stores an object
 // If expectedChecksumSHA256 is provided (non-empty), it validates the checksum after computing.
-func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata, expectedChecksumSHA256 string) (*ObjectInfo, error) {
+// If expectedChecksumMD5 is provided (non-empty), it validates the MD5 checksum after computing.
+func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Metadata, expectedChecksumSHA256 string, expectedChecksumMD5 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -122,9 +124,10 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while writing
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate SHA256 and MD5 while writing
+	hashSHA256 := sha256.New()
+	hashMD5 := md5.New()
+	writer := io.MultiWriter(tmpFile, hashSHA256, hashMD5)
 
 	if _, err := io.Copy(writer, data); err != nil {
 		tmpFile.Close()
@@ -138,12 +141,18 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		return nil, err
 	}
 
-	sum := hash.Sum(nil)
-	etag := hex.EncodeToString(sum)
-	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
+	sumSHA256 := hashSHA256.Sum(nil)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sumSHA256)
 
-	// Validate checksum if provided
+	sumMD5 := hashMD5.Sum(nil)
+	etag := hex.EncodeToString(sumMD5)
+	checksumMD5 := base64.StdEncoding.EncodeToString(sumMD5)
+
+	// Validate checksums if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
+	if expectedChecksumMD5 != "" && expectedChecksumMD5 != checksumMD5 {
 		return nil, ErrChecksumMismatch
 	}
 
@@ -161,6 +170,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 			Size:           existingMetadata.Size,
 			ETag:           existingMetadata.Etag,
 			ChecksumSHA256: existingMetadata.Sha256,
+			ChecksumMD5:    existingMetadata.Md5,
 			ModTime:        existingMetadata.ModTime,
 			Metadata:       existingMetadata.Metadata,
 		}, nil
@@ -169,6 +179,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 	metadata := &objectMetadata{
 		Etag:     etag,
 		Sha256:   checksumSHA256,
+		Md5:      checksumMD5,
 		Metadata: userMetadata,
 		ModTime:  time.Now(),
 		Size:     fileInfo.Size(),
@@ -214,6 +225,7 @@ func (s *Storage) PutObject(bucket, key string, data io.Reader, userMetadata Met
 		Size:           metadata.Size,
 		ETag:           etag,
 		ChecksumSHA256: checksumSHA256,
+		ChecksumMD5:    checksumMD5,
 		ModTime:        metadata.ModTime,
 		Metadata:       userMetadata,
 	}, nil
@@ -235,6 +247,7 @@ func (s *Storage) GetObject(bucket, key string) (func() (io.ReadSeekCloser, erro
 		Size:           metadata.Size,
 		ETag:           metadata.Etag,
 		ChecksumSHA256: metadata.Sha256,
+		ChecksumMD5:    metadata.Md5,
 		ModTime:        metadata.ModTime,
 		Metadata:       metadata.Metadata,
 	}
@@ -356,6 +369,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 				Size:           metadata.Size,
 				ETag:           metadata.Etag,
 				ChecksumSHA256: metadata.Sha256,
+				ChecksumMD5:    metadata.Md5,
 				ModTime:        metadata.ModTime,
 				Metadata:       metadata.Metadata,
 			})
@@ -406,6 +420,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Size:           existingDstMetadata.Size,
 			ETag:           existingDstMetadata.Etag,
 			ChecksumSHA256: existingDstMetadata.Sha256,
+			ChecksumMD5:    existingDstMetadata.Md5,
 			ModTime:        existingDstMetadata.ModTime,
 			Metadata:       existingDstMetadata.Metadata,
 		}, nil
@@ -418,6 +433,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Size:     srcMetadata.Size,
 			Etag:     srcMetadata.Etag,
 			Sha256:   srcMetadata.Sha256,
+			Md5:      srcMetadata.Md5,
 			Metadata: metadataToUse,
 			Data:     srcMetadata.Data,
 			ModTime:  srcMetadata.ModTime,
@@ -438,6 +454,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Size:           dstMetadata.Size,
 			ETag:           dstMetadata.Etag,
 			ChecksumSHA256: dstMetadata.Sha256,
+			ChecksumMD5:    dstMetadata.Md5,
 			ModTime:        dstMetadata.ModTime,
 			Metadata:       dstMetadata.Metadata,
 		}, nil
@@ -449,6 +466,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Size:     0,
 			Etag:     srcMetadata.Etag,
 			Sha256:   srcMetadata.Sha256,
+			Md5:      srcMetadata.Md5,
 			Metadata: metadataToUse,
 			ModTime:  srcMetadata.ModTime,
 		}
@@ -467,6 +485,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 			Size:           dstMetadata.Size,
 			ETag:           dstMetadata.Etag,
 			ChecksumSHA256: dstMetadata.Sha256,
+			ChecksumMD5:    dstMetadata.Md5,
 			ModTime:        dstMetadata.ModTime,
 			Metadata:       dstMetadata.Metadata,
 		}, nil
@@ -481,6 +500,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 		Size:     srcMetadata.Size,
 		Etag:     srcMetadata.Etag,
 		Sha256:   srcMetadata.Sha256,
+		Md5:      srcMetadata.Md5,
 		Metadata: metadataToUse,
 		ModTime:  srcMetadata.ModTime,
 	}
@@ -499,6 +519,7 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 		Size:           dstMetadata.Size,
 		ETag:           dstMetadata.Etag,
 		ChecksumSHA256: dstMetadata.Sha256,
+		ChecksumMD5:    dstMetadata.Md5,
 		ModTime:        dstMetadata.ModTime,
 		Metadata:       metadataToUse,
 	}, nil

@@ -1,8 +1,10 @@
 package integration
 
 import (
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"strings"
 	"testing"
@@ -381,5 +383,132 @@ func TestMultipartUploadChecksum(t *testing.T) {
 			Key:      aws.String("complete-mismatch.txt"),
 			UploadId: uploadID,
 		})
+	})
+}
+
+// TestETagMD5 tests that ETag is computed using MD5
+func TestETagMD5(t *testing.T) {
+	bucketName := "test-etag-md5"
+	objectKey := "etag-test.txt"
+	objectContent := "Hello, MD5 ETag!"
+
+	// Calculate expected MD5 ETag
+	md5Hash := md5.Sum([]byte(objectContent))
+	expectedETag := hex.EncodeToString(md5Hash[:])
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create bucket: %v", err)
+	}
+	defer ts.client.DeleteBucket(ts.ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	// Test: PutObject and verify ETag is MD5-based
+	t.Run("PutObjectETagIsMD5", func(t *testing.T) {
+		output, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+			Body:   strings.NewReader(objectContent),
+		})
+		if err != nil {
+			t.Fatalf("PutObject failed: %v", err)
+		}
+
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set")
+		}
+		// ETag is returned quoted
+		gotETag := strings.Trim(*output.ETag, "\"")
+		if gotETag != expectedETag {
+			t.Errorf("ETag mismatch: got %s, want %s (MD5)", gotETag, expectedETag)
+		}
+		t.Logf("PutObject ETag (MD5): %s", gotETag)
+	})
+
+	// Test: GetObject and verify ETag is MD5-based
+	t.Run("GetObjectETagIsMD5", func(t *testing.T) {
+		output, err := ts.client.GetObject(ts.ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		})
+		if err != nil {
+			t.Fatalf("GetObject failed: %v", err)
+		}
+		defer output.Body.Close()
+
+		body, err := io.ReadAll(output.Body)
+		if err != nil {
+			t.Fatalf("Failed to read body: %v", err)
+		}
+		if string(body) != objectContent {
+			t.Errorf("Content mismatch: got %s, want %s", string(body), objectContent)
+		}
+
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set in GetObject response")
+		}
+		gotETag := strings.Trim(*output.ETag, "\"")
+		if gotETag != expectedETag {
+			t.Errorf("ETag mismatch: got %s, want %s (MD5)", gotETag, expectedETag)
+		}
+		t.Logf("GetObject ETag (MD5): %s", gotETag)
+	})
+
+	// Test: HeadObject and verify ETag is MD5-based
+	t.Run("HeadObjectETagIsMD5", func(t *testing.T) {
+		output, err := ts.client.HeadObject(ts.ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		if output.ETag == nil {
+			t.Fatal("Expected ETag to be set in HeadObject response")
+		}
+		gotETag := strings.Trim(*output.ETag, "\"")
+		if gotETag != expectedETag {
+			t.Errorf("ETag mismatch: got %s, want %s (MD5)", gotETag, expectedETag)
+		}
+		t.Logf("HeadObject ETag (MD5): %s", gotETag)
+	})
+
+	// Test: PutObject with Content-MD5 validation
+	t.Run("PutObjectWithContentMD5", func(t *testing.T) {
+		newContent := "Content with MD5 validation"
+		newHash := md5.Sum([]byte(newContent))
+		contentMD5 := base64.StdEncoding.EncodeToString(newHash[:])
+
+		output, err := ts.client.PutObject(ts.ctx, &s3.PutObjectInput{
+			Bucket:     aws.String(bucketName),
+			Key:        aws.String("md5-validated.txt"),
+			Body:       strings.NewReader(newContent),
+			ContentMD5: aws.String(contentMD5),
+		})
+		if err != nil {
+			t.Fatalf("PutObject with Content-MD5 failed: %v", err)
+		}
+
+		expectedNewETag := hex.EncodeToString(newHash[:])
+		gotETag := strings.Trim(*output.ETag, "\"")
+		if gotETag != expectedNewETag {
+			t.Errorf("ETag mismatch: got %s, want %s", gotETag, expectedNewETag)
+		}
+		t.Logf("PutObject with Content-MD5 ETag: %s", gotETag)
+
+		// Cleanup
+		ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("md5-validated.txt"),
+		})
+	})
+
+	// Cleanup
+	ts.client.DeleteObject(ts.ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
 	})
 }

@@ -126,6 +126,8 @@ type objectMetadata struct {
 
 	Sha256 string
 
+	Md5 string
+
 	ModTime time.Time
 }
 

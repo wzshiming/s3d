@@ -77,7 +77,7 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 		}
 	}
 
-	objInfo, err := s.storage.PutObject(bucket, key, file, metadata, "")
+	objInfo, err := s.storage.PutObject(bucket, key, file, metadata, "", "")
 	if err != nil {
 		s.errorResponse(w, r, err)
 		return

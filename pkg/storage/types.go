@@ -8,6 +8,7 @@ type ObjectInfo struct {
 	Size           int64
 	ETag           string
 	ChecksumSHA256 string
+	ChecksumMD5    string
 	ModTime        time.Time
 	Metadata       Metadata
 }
@@ -30,6 +31,7 @@ type Multipart struct {
 	PartNumber     int
 	ETag           string
 	ChecksumSHA256 string
+	ChecksumMD5    string
 }
 
 // Part represents a stored part of list parts

@@ -51,8 +51,12 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	// Get the expected checksum from the request header (if provided)
 	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+	expectedChecksumMD5 := r.Header.Get("x-amz-checksum-md5")
+	if expectedChecksumMD5 == "" {
+		expectedChecksumMD5 = r.Header.Get("Content-MD5")
+	}
 
-	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body, expectedChecksumSHA256)
+	objInfo, err := s.storage.UploadPart(bucket, key, uploadID, partNumber, r.Body, expectedChecksumSHA256, expectedChecksumMD5)
 	if err != nil {
 		s.errorResponse(w, r, err)
 		return
@@ -60,7 +64,12 @@ func (s *S3Handler) handleUploadPart(w http.ResponseWriter, r *http.Request, buc
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
+	if objInfo.ChecksumSHA256 != "" {
+		w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
+	}
+	if objInfo.ChecksumMD5 != "" {
+		w.Header().Set("x-amz-checksum-md5", objInfo.ChecksumMD5)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -165,13 +174,15 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 			PartNumber:     p.PartNumber,
 			ETag:           p.ETag,
 			ChecksumSHA256: p.ChecksumSHA256,
+			ChecksumMD5:    p.ChecksumMD5,
 		})
 	}
 
 	// Get the expected checksum from the request header (if provided)
 	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+	expectedChecksumMD5 := r.Header.Get("x-amz-checksum-md5")
 
-	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts, expectedChecksumSHA256)
+	objInfo, err := s.storage.CompleteMultipartUpload(bucket, key, uploadID, parts, expectedChecksumSHA256, expectedChecksumMD5)
 	if err != nil {
 		s.errorResponse(w, r, err)
 		return
@@ -183,6 +194,7 @@ func (s *S3Handler) handleCompleteMultipartUpload(w http.ResponseWriter, r *http
 		Key:            key,
 		ETag:           fmt.Sprintf("%q", objInfo.ETag),
 		ChecksumSHA256: objInfo.ChecksumSHA256,
+		ChecksumMD5:    objInfo.ChecksumMD5,
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)
