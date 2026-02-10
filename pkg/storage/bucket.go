@@ -1,89 +1,159 @@
 package storage
 
 import (
-	"os"
 	"strings"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
+
+func isBucketNameValid(bucket string) bool {
+	if bucket == "" {
+		return false
+	}
+
+	if bucket[0] == '-' || bucket[len(bucket)-1] == '-' {
+		return false
+	}
+
+	if bucket[0] == '.' || bucket[len(bucket)-1] == '.' {
+		return false
+	}
+
+	for _, c := range bucket {
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9':
+		case c == '-':
+		case c == '.':
+		default:
+			return false
+		}
+	}
+
+	return len(bucket) <= 63
+}
 
 // CreateBucket creates a new bucket
 func (s *Storage) CreateBucket(bucket string) error {
-	bucketPath, err := s.safePath(bucket, "")
+	if !isBucketNameValid(bucket) {
+		return ErrInvalidBucketName
+	}
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(contentBucketPrefix + bucket))
+		if b != nil {
+			return ErrBucketAlreadyExists
+		}
+
+		_, err := tx.CreateBucket([]byte(contentBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+		_, err = tx.CreateBucket([]byte(uploadsBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+		b, err = tx.CreateBucket([]byte(metadataBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+
+		err = b.Put([]byte("modtime"), []byte(time.Now().UTC().Format(time.RFC3339Nano)))
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	if _, err := os.Stat(bucketPath); err == nil {
-		return ErrBucketAlreadyExists
-	}
-
-	return os.MkdirAll(bucketPath, 0755)
+	return nil
 }
 
 // DeleteBucket deletes a bucket
 func (s *Storage) DeleteBucket(bucket string) error {
-	bucketPath, err := s.safePath(bucket, "")
+	if !isBucketNameValid(bucket) {
+		return ErrInvalidBucketName
+	}
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(contentBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		// TODO: Clean up all objects and multipart uploads in the bucket before deleting
+
+		err := tx.DeleteBucket([]byte(contentBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+		err = tx.DeleteBucket([]byte(uploadsBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+		err = tx.DeleteBucket([]byte(metadataBucketPrefix + bucket))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	if _, err := os.Stat(bucketPath); os.IsNotExist(err) {
-		return ErrBucketNotFound
-	}
-
-	return os.RemoveAll(bucketPath)
+	return nil
 }
 
 // ListBuckets lists all buckets with pagination support
-func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) ([]BucketInfo, error) {
-	entries, err := os.ReadDir(s.basePath)
-	if err != nil {
-		return nil, err
-	}
+func (s *Storage) ListBuckets(prefix, continuationToken string, maxBuckets int) (buckets []BucketInfo, nextContinuationToken string, err error) {
+	err = s.db.View(func(tx *bolt.Tx) error {
+		c := tx.Cursor()
 
-	var buckets []BucketInfo
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if sanitizeBucketName(name) != nil {
-			continue
-		}
+		var count int
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			name := string(k)
+			if !strings.HasPrefix(name, contentBucketPrefix) {
+				continue
+			}
+			bucketName := strings.TrimPrefix(name, contentBucketPrefix)
+			if prefix != "" && !strings.HasPrefix(bucketName, prefix) {
+				continue
+			}
+			if continuationToken != "" && bucketName <= continuationToken {
+				continue
+			}
 
-		// Filter by prefix if provided
-		if prefix != "" && !strings.HasPrefix(name, prefix) {
-			continue
-		}
+			modtimeBytes := tx.Bucket([]byte(metadataBucketPrefix + bucketName)).Get([]byte("modtime"))
+			modtime, _ := time.Parse(time.RFC3339Nano, string(modtimeBytes))
 
-		// Skip buckets before or equal to continuationToken (for pagination)
-		if continuationToken != "" && name <= continuationToken {
-			continue
+			buckets = append(buckets, BucketInfo{
+				Name:    bucketName,
+				ModTime: modtime,
+			})
+			count++
+			if count >= maxBuckets {
+				nextContinuationToken = bucketName
+				break
+			}
 		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		buckets = append(buckets, BucketInfo{
-			Name:    name,
-			ModTime: info.ModTime(),
-		})
-
-		// Stop if we've reached maxBuckets (fetch one extra to determine if truncated)
-		if maxBuckets > 0 && len(buckets) >= maxBuckets {
-			break
-		}
-	}
-	return buckets, nil
+		return nil
+	})
+	return buckets, nextContinuationToken, err
 }
 
 // BucketExists checks if a bucket exists
 func (s *Storage) BucketExists(bucket string) bool {
-	bucketPath, err := s.safePath(bucket, "")
-	if err != nil {
+	if !isBucketNameValid(bucket) {
 		return false
 	}
 
-	info, err := os.Stat(bucketPath)
-	return err == nil && info.IsDir()
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(contentBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		return nil
+	})
+	return err == nil
 }

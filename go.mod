@@ -7,7 +7,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.15
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.19
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.7
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	go.etcd.io/bbolt v1.4.3
 )

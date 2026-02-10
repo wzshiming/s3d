@@ -80,8 +80,8 @@ func (s *S3Handler) xmlResponse(w http.ResponseWriter, r *http.Request, data any
 	}
 }
 
-// errorResponse writes an error response
-func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, message string, status int) {
+// response writes an error response
+func (s *S3Handler) response(w http.ResponseWriter, r *http.Request, code, message string, status int) {
 	err := Error{
 		Code:    code,
 		Message: message,
@@ -97,4 +97,38 @@ func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, code, 
 	if encodeErr := xml.NewEncoder(w).Encode(err); encodeErr != nil {
 		return
 	}
+}
+
+// errorResponse writes an error response with a custom message
+func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, err error) {
+	switch err {
+	case storage.ErrBucketNotFound:
+		s.response(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+	case storage.ErrObjectNotFound:
+		s.response(w, r, "NoSuchKey", "Object does not exist", http.StatusNotFound)
+	case storage.ErrInvalidUploadID:
+		s.response(w, r, "NoSuchUpload", "Upload does not exist", http.StatusNotFound)
+	case storage.ErrInvalidPartNumber:
+		s.response(w, r, "InvalidArgument", "Invalid part number", http.StatusBadRequest)
+	case storage.ErrChecksumMismatch:
+		s.response(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
+	case storage.ErrInvalidRange:
+		s.response(w, r, "InvalidRange", "The requested range is not satisfiable.", http.StatusRequestedRangeNotSatisfiable)
+	case storage.ErrInvalidPart:
+		s.response(w, r, "InvalidPart", "One or more of the specified parts could not be found. The part might not have been uploaded.", http.StatusBadRequest)
+	case storage.ErrUploadNotFound:
+		s.response(w, r, "NoSuchUpload", "The specified multipart upload does not exist. The upload ID might be invalid or the multipart upload might have been aborted or completed.", http.StatusNotFound)
+	case storage.ErrInvalidBucketName:
+		s.response(w, r, "InvalidBucketName", "The specified bucket is not valid.", http.StatusBadRequest)
+	case storage.ErrInvalidObjectKey:
+		s.response(w, r, "InvalidObjectKey", "The specified key is not valid.", http.StatusBadRequest)
+	case storage.ErrBucketAlreadyExists:
+		s.response(w, r, "BucketAlreadyExists", "Bucket already exists", http.StatusConflict)
+	default:
+		s.response(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *S3Handler) notAllowedResponse(w http.ResponseWriter, r *http.Request) {
+	s.response(w, r, "MethodNotAllowed", "Method not allowed", http.StatusMethodNotAllowed)
 }

@@ -30,11 +30,14 @@ TEST_LOG="$(jq -rR 'fromjson? | "| \( .name ) | \( .status ) | `\( .function | g
 TEST_LOG="$(echo "$TEST_LOG" | sed "s#${REPO_ROOT}#<DIR>#g")"
 
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z/<DATETIME>/g')"
+TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/[0-9]{8}T[0-9]{6}Z/<AMZ_DATE>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<UUID>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/bucket-[a-z0-9]{12}/bucket-<RANDOM_SUFFIX>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/bucket-[0-9]{3,5}/bucket-<RANDOM_SUFFIX>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/test-[a-z0-9]{14,16}/test-<RANDOM_SUFFIX>/g')"
 TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/php-[a-z0-9]{13}/php-<RANDOM_SUFFIX>/g')"
+TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/\.mc-[0-9]+/\.mc-<RANDOM_SUFFIX>/g')"
+TEST_LOG="$(echo "$TEST_LOG" | sed -E 's/s-[0-9]{1,}/<UPLOAD_ID>/g')"
 
 TOTAL_COUNT=$(echo "$TEST_LOG" | wc -l)
 PASS_COUNT=$(echo "$TEST_LOG" | grep -c '| PASS |' || echo "0")

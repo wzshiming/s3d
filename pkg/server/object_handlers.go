@@ -34,14 +34,7 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrChecksumMismatch:
-			s.errorResponse(w, r, "BadDigest", "The Content-SHA256 you specified did not match what we received.", http.StatusBadRequest)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -53,24 +46,23 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 // handleGetObject handles GetObject operation
 func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
-	reader, info, err := s.storage.GetObject(bucket, key)
+	readerFunc, info, err := s.storage.GetObject(bucket, key)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrObjectNotFound:
-			s.errorResponse(w, r, "NoSuchKey", "Object does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
-	defer reader.Close()
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	w.Header().Set("x-amz-checksum-sha256", info.ChecksumSHA256)
 	setMetadataHeaders(w, info.Metadata)
+
+	reader, err := readerFunc()
+	if err != nil {
+		s.response(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer reader.Close()
 
 	http.ServeContent(w, r, key, info.ModTime, reader)
 }
@@ -79,11 +71,7 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	err := s.storage.DeleteObject(bucket, key)
 	if err != nil && err != storage.ErrObjectNotFound {
-		if err == storage.ErrBucketNotFound {
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		} else {
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -95,14 +83,14 @@ func (s *S3Handler) handleDeleteObject(w http.ResponseWriter, r *http.Request, b
 func (s *S3Handler) handleDeleteObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	// Check if bucket exists
 	if !s.storage.BucketExists(bucket) {
-		s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
+		s.response(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
 		return
 	}
 
 	// Parse the request body
 	var deleteReq Delete
 	if err := xml.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
-		s.errorResponse(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		s.response(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
 		return
 	}
 
@@ -137,7 +125,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	// Parse x-amz-copy-source header
 	copySource := r.Header.Get("x-amz-copy-source")
 	if copySource == "" {
-		s.errorResponse(w, r, "InvalidArgument", "Copy source header is required", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Copy source header is required", http.StatusBadRequest)
 		return
 	}
 
@@ -147,7 +135,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	// Parse source bucket and key
 	parts := strings.SplitN(copySource, "/", 2)
 	if len(parts) != 2 {
-		s.errorResponse(w, r, "InvalidArgument", "Invalid copy source format", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Invalid copy source format", http.StatusBadRequest)
 		return
 	}
 
@@ -167,14 +155,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	// Perform copy
 	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey, metadata)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrObjectNotFound:
-			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -191,7 +172,7 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 	// Parse x-amz-rename-source header
 	renameSource := r.Header.Get("x-amz-rename-source")
 	if renameSource == "" {
-		s.errorResponse(w, r, "InvalidArgument", "Rename source header is required", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Rename source header is required", http.StatusBadRequest)
 		return
 	}
 
@@ -201,7 +182,7 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 	// Parse source bucket and key
 	parts := strings.SplitN(renameSource, "/", 2)
 	if len(parts) != 2 {
-		s.errorResponse(w, r, "InvalidArgument", "Invalid rename source format", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "Invalid rename source format", http.StatusBadRequest)
 		return
 	}
 
@@ -210,21 +191,14 @@ func (s *S3Handler) handleRenameObject(w http.ResponseWriter, r *http.Request, b
 
 	// Verify both source and destination are in the same bucket
 	if srcBucket != bucket {
-		s.errorResponse(w, r, "InvalidArgument", "RenameObject requires source and destination to be in the same bucket", http.StatusBadRequest)
+		s.response(w, r, "InvalidArgument", "RenameObject requires source and destination to be in the same bucket", http.StatusBadRequest)
 		return
 	}
 
 	// Perform rename
 	err := s.storage.RenameObject(bucket, srcKey, dstKey)
 	if err != nil {
-		switch err {
-		case storage.ErrBucketNotFound:
-			s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-		case storage.ErrObjectNotFound:
-			s.errorResponse(w, r, "NoSuchKey", "Source object does not exist", http.StatusNotFound)
-		default:
-			s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-		}
+		s.errorResponse(w, r, err)
 		return
 	}
 
@@ -251,38 +225,29 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	if mk := query.Get("max-keys"); mk != "" {
 		parsed, err := strconv.Atoi(mk)
 		if err != nil || parsed < 0 {
-			s.errorResponse(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
+			s.response(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
 			return
 		}
 		maxKeys = parsed
 	}
 
-	// Handle maxKeys=0 special case
-	var objects []storage.ObjectInfo
-	var commonPrefixes []string
-	var err error
-	if maxKeys != 0 {
-		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-		if err != nil {
-			if err == storage.ErrBucketNotFound {
-				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-			} else {
-				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-			}
-			return
+	if maxKeys == 0 {
+		result := ListBucketResult{
+			Name:      bucket,
+			Prefix:    prefix,
+			Marker:    marker,
+			Delimiter: delimiter,
+			MaxKeys:   maxKeys,
 		}
+
+		s.xmlResponse(w, r, result, http.StatusOK)
+		return
 	}
 
-	// Determine if results are truncated
-	isTruncated := len(objects) > maxKeys
-	var nextMarker string
-	if isTruncated {
-		// Remove the extra object
-		objects = objects[:maxKeys]
-		// Set next marker to the last object key
-		if len(objects) > 0 {
-			nextMarker = objects[len(objects)-1].Key
-		}
+	objects, commonPrefixes, nextMarker, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys)
+	if err != nil {
+		s.errorResponse(w, r, err)
+		return
 	}
 
 	result := ListBucketResult{
@@ -291,11 +256,8 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 		Marker:      marker,
 		Delimiter:   delimiter,
 		MaxKeys:     maxKeys,
-		IsTruncated: isTruncated,
-	}
-
-	if isTruncated {
-		result.NextMarker = nextMarker
+		IsTruncated: nextMarker != "",
+		NextMarker:  nextMarker,
 	}
 
 	for _, obj := range objects {
@@ -329,12 +291,23 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	if mk := query.Get("max-keys"); mk != "" {
 		parsed, err := strconv.Atoi(mk)
 		if err != nil || parsed < 0 {
-			s.errorResponse(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
+			s.response(w, r, "InvalidArgument", "Argument max-keys must be an integer between 0 and 2147483647", http.StatusBadRequest)
 			return
 		}
 		maxKeys = parsed
 	}
+	if maxKeys == 0 {
+		result := ListBucketResultV2{
+			Name:       bucket,
+			Prefix:     prefix,
+			Delimiter:  delimiter,
+			StartAfter: startAfter,
+			MaxKeys:    maxKeys,
+		}
 
+		s.xmlResponse(w, r, result, http.StatusOK)
+		return
+	}
 	// Determine the marker to use
 	marker := ""
 	if continuationToken != "" {
@@ -343,47 +316,22 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 		marker = startAfter
 	}
 
-	// Handle maxKeys=0 special case
-	var objects []storage.ObjectInfo
-	var commonPrefixes []string
-	var err error
-	if maxKeys != 0 {
-		objects, commonPrefixes, err = s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys+1)
-		if err != nil {
-			if err == storage.ErrBucketNotFound {
-				s.errorResponse(w, r, "NoSuchBucket", "Bucket does not exist", http.StatusNotFound)
-			} else {
-				s.errorResponse(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
-			}
-			return
-		}
-	}
-
-	// Determine if results are truncated
-	isTruncated := len(objects) > maxKeys
-	var nextContinuationToken string
-	if isTruncated {
-		// Remove the extra object
-		objects = objects[:maxKeys]
-		// Set next continuation token to the last object key
-		if len(objects) > 0 {
-			nextContinuationToken = objects[len(objects)-1].Key
-		}
+	objects, commonPrefixes, nextContinuationToken, err := s.storage.ListObjects(bucket, prefix, delimiter, marker, maxKeys)
+	if err != nil {
+		s.errorResponse(w, r, err)
+		return
 	}
 
 	result := ListBucketResultV2{
-		Name:              bucket,
-		Prefix:            prefix,
-		Delimiter:         delimiter,
-		MaxKeys:           maxKeys,
-		KeyCount:          len(objects),
-		IsTruncated:       isTruncated,
-		StartAfter:        startAfter,
-		ContinuationToken: continuationToken,
-	}
-
-	if isTruncated {
-		result.NextContinuationToken = nextContinuationToken
+		Name:                  bucket,
+		Prefix:                prefix,
+		Delimiter:             delimiter,
+		MaxKeys:               maxKeys,
+		KeyCount:              len(objects) + len(commonPrefixes),
+		IsTruncated:           nextContinuationToken != "",
+		StartAfter:            startAfter,
+		ContinuationToken:     continuationToken,
+		NextContinuationToken: nextContinuationToken,
 	}
 
 	for _, obj := range objects {

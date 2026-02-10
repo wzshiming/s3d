@@ -139,8 +139,8 @@ type ListPartsResult struct {
 	Key                  string          `xml:"Key"`
 	UploadId             string          `xml:"UploadId"`
 	StorageClass         string          `xml:"StorageClass"`
-	PartNumberMarker     int             `xml:"PartNumberMarker,omitempty"`
-	NextPartNumberMarker int             `xml:"NextPartNumberMarker,omitempty"`
+	PartNumberMarker     string          `xml:"PartNumberMarker,omitempty"`
+	NextPartNumberMarker string          `xml:"NextPartNumberMarker,omitempty"`
 	MaxParts             int             `xml:"MaxParts"`
 	IsTruncated          bool            `xml:"IsTruncated"`
 	Parts                []CompletedPart `xml:"Part"`
