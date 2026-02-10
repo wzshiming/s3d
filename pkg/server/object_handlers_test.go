@@ -1693,3 +1693,204 @@ func TestListObjectsInvalidMaxKeys(t *testing.T) {
 		}
 	})
 }
+
+// TestListObjectsV2EncodingType tests the encoding-type=url parameter support for ListObjectsV2
+func TestListObjectsV2EncodingType(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-encoding-type-v2"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create objects with special characters
+	specialKeys := []string{
+		"normal-key.txt",
+		"path/to/file.txt",
+		"key with spaces.txt",
+		"key&special=chars.txt",
+	}
+	for _, key := range specialKeys {
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader("content"),
+		})
+		if err != nil {
+			t.Fatalf("PutObject %q failed: %v", key, err)
+		}
+	}
+
+	t.Run("WithEncodingTypeUrl", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       aws.String(bucketName),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with EncodingType failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+
+		if len(output.Contents) != len(specialKeys) {
+			t.Errorf("Expected %d objects, got %d", len(specialKeys), len(output.Contents))
+		}
+	})
+
+	t.Run("WithEncodingTypeUrlAndDelimiter", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       aws.String(bucketName),
+			Delimiter:    aws.String("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with EncodingType and delimiter failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+
+		// Should have common prefix "path/" URL-encoded as "path%2F"
+		foundPrefix := false
+		for _, cp := range output.CommonPrefixes {
+			if *cp.Prefix == "path%2F" {
+				foundPrefix = true
+			}
+		}
+		if !foundPrefix {
+			t.Errorf("Expected common prefix 'path%%2F' not found, got: %v", output.CommonPrefixes)
+		}
+	})
+
+	t.Run("WithEncodingTypeUrlAndPrefix", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       aws.String(bucketName),
+			Prefix:       aws.String("key"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with EncodingType and prefix failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+
+		// Should find the keys starting with "key"
+		if len(output.Contents) != 2 {
+			t.Errorf("Expected 2 objects with prefix 'key', got %d", len(output.Contents))
+		}
+	})
+
+	t.Run("WithEncodingTypeUrlMaxKeysZero", func(t *testing.T) {
+		output, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       aws.String(bucketName),
+			MaxKeys:      aws.Int32(0),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 with EncodingType and MaxKeys=0 failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+	})
+}
+
+// TestListObjectsV1EncodingType tests the encoding-type=url parameter support for ListObjects v1
+func TestListObjectsV1EncodingType(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-encoding-type-v1"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	// Create objects with special characters
+	specialKeys := []string{
+		"normal-key.txt",
+		"path/to/file.txt",
+		"key with spaces.txt",
+	}
+	for _, key := range specialKeys {
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+			Body:   strings.NewReader("content"),
+		})
+		if err != nil {
+			t.Fatalf("PutObject %q failed: %v", key, err)
+		}
+	}
+
+	t.Run("WithEncodingTypeUrl", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       aws.String(bucketName),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjects with EncodingType failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+
+		if len(output.Contents) != len(specialKeys) {
+			t.Errorf("Expected %d objects, got %d", len(specialKeys), len(output.Contents))
+		}
+	})
+
+	t.Run("WithEncodingTypeUrlAndDelimiter", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       aws.String(bucketName),
+			Delimiter:    aws.String("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjects with EncodingType and delimiter failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+
+		// Should have common prefix "path/" URL-encoded as "path%2F"
+		foundPrefix := false
+		for _, cp := range output.CommonPrefixes {
+			if *cp.Prefix == "path%2F" {
+				foundPrefix = true
+			}
+		}
+		if !foundPrefix {
+			t.Errorf("Expected common prefix 'path%%2F' not found, got: %v", output.CommonPrefixes)
+		}
+	})
+
+	t.Run("WithEncodingTypeUrlMaxKeysZero", func(t *testing.T) {
+		output, err := ts.client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       aws.String(bucketName),
+			MaxKeys:      aws.Int32(0),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListObjects with EncodingType and MaxKeys=0 failed: %v", err)
+		}
+
+		if output.EncodingType != types.EncodingTypeUrl {
+			t.Errorf("Expected EncodingType %q, got %q", types.EncodingTypeUrl, output.EncodingType)
+		}
+	})
+}

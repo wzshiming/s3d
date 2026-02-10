@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -235,6 +236,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	prefix := query.Get("prefix")
 	delimiter := query.Get("delimiter")
 	marker := query.Get("marker")
+	encodingType := query.Get("encoding-type")
 	maxKeys := 1000
 	if mk := query.Get("max-keys"); mk != "" {
 		parsed, err := strconv.Atoi(mk)
@@ -247,11 +249,12 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 
 	if maxKeys == 0 {
 		result := ListBucketResult{
-			Name:      bucket,
-			Prefix:    prefix,
-			Marker:    marker,
-			Delimiter: delimiter,
-			MaxKeys:   maxKeys,
+			Name:         bucket,
+			Prefix:       encodeKey(prefix, encodingType),
+			Marker:       encodeKey(marker, encodingType),
+			Delimiter:    encodeKey(delimiter, encodingType),
+			EncodingType: encodingType,
+			MaxKeys:      maxKeys,
 		}
 
 		s.xmlResponse(w, r, result, http.StatusOK)
@@ -265,18 +268,19 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	result := ListBucketResult{
-		Name:        bucket,
-		Prefix:      prefix,
-		Marker:      marker,
-		Delimiter:   delimiter,
-		MaxKeys:     maxKeys,
-		IsTruncated: nextMarker != "",
-		NextMarker:  nextMarker,
+		Name:         bucket,
+		Prefix:       encodeKey(prefix, encodingType),
+		Marker:       encodeKey(marker, encodingType),
+		Delimiter:    encodeKey(delimiter, encodingType),
+		EncodingType: encodingType,
+		MaxKeys:      maxKeys,
+		IsTruncated:  nextMarker != "",
+		NextMarker:   encodeKey(nextMarker, encodingType),
 	}
 
 	for _, obj := range objects {
 		result.Contents = append(result.Contents, Contents{
-			Key:          obj.Key,
+			Key:          encodeKey(obj.Key, encodingType),
 			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
@@ -286,7 +290,7 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 
 	for _, cp := range commonPrefixes {
 		result.CommonPrefixes = append(result.CommonPrefixes, CommonPrefix{
-			Prefix: cp,
+			Prefix: encodeKey(cp, encodingType),
 		})
 	}
 
@@ -300,6 +304,7 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	delimiter := query.Get("delimiter")
 	startAfter := query.Get("start-after")
 	continuationToken := query.Get("continuation-token")
+	encodingType := query.Get("encoding-type")
 	fetchOwner := query.Get("fetch-owner") == "true"
 	maxKeys := 1000
 	if mk := query.Get("max-keys"); mk != "" {
@@ -312,11 +317,12 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	}
 	if maxKeys == 0 {
 		result := ListBucketResultV2{
-			Name:       bucket,
-			Prefix:     prefix,
-			Delimiter:  delimiter,
-			StartAfter: startAfter,
-			MaxKeys:    maxKeys,
+			Name:         bucket,
+			Prefix:       encodeKey(prefix, encodingType),
+			Delimiter:    encodeKey(delimiter, encodingType),
+			EncodingType: encodingType,
+			StartAfter:   encodeKey(startAfter, encodingType),
+			MaxKeys:      maxKeys,
 		}
 
 		s.xmlResponse(w, r, result, http.StatusOK)
@@ -338,19 +344,20 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 
 	result := ListBucketResultV2{
 		Name:                  bucket,
-		Prefix:                prefix,
-		Delimiter:             delimiter,
+		Prefix:                encodeKey(prefix, encodingType),
+		Delimiter:             encodeKey(delimiter, encodingType),
+		EncodingType:          encodingType,
 		MaxKeys:               maxKeys,
 		KeyCount:              len(objects) + len(commonPrefixes),
 		IsTruncated:           nextContinuationToken != "",
-		StartAfter:            startAfter,
+		StartAfter:            encodeKey(startAfter, encodingType),
 		ContinuationToken:     continuationToken,
 		NextContinuationToken: nextContinuationToken,
 	}
 
 	for _, obj := range objects {
 		content := Contents{
-			Key:          obj.Key,
+			Key:          encodeKey(obj.Key, encodingType),
 			LastModified: obj.ModTime,
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
@@ -367,9 +374,17 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 
 	for _, cp := range commonPrefixes {
 		result.CommonPrefixes = append(result.CommonPrefixes, CommonPrefix{
-			Prefix: cp,
+			Prefix: encodeKey(cp, encodingType),
 		})
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)
+}
+
+// encodeKey URL-encodes a value if encodingType is "url"
+func encodeKey(value, encodingType string) string {
+	if encodingType == "url" {
+		return url.QueryEscape(value)
+	}
+	return value
 }
