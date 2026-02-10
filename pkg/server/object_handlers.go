@@ -29,10 +29,14 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	// Get the expected checksum from the request header (if provided)
 	expectedChecksumSHA256 := r.Header.Get("x-amz-checksum-sha256")
+	expectedChecksumMD5 := r.Header.Get("x-amz-checksum-md5")
+	if expectedChecksumMD5 == "" {
+		expectedChecksumMD5 = r.Header.Get("Content-MD5")
+	}
 
 	metadata := extractMetadata(r)
 
-	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256)
+	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256, expectedChecksumMD5)
 	if err != nil {
 		s.errorResponse(w, r, err)
 		return
@@ -40,7 +44,12 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", objInfo.ETag))
-	w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
+	if objInfo.ChecksumSHA256 != "" {
+		w.Header().Set("x-amz-checksum-sha256", objInfo.ChecksumSHA256)
+	}
+	if objInfo.ChecksumMD5 != "" {
+		w.Header().Set("x-amz-checksum-md5", objInfo.ChecksumMD5)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -54,7 +63,12 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
-	w.Header().Set("x-amz-checksum-sha256", info.ChecksumSHA256)
+	if info.ChecksumSHA256 != "" {
+		w.Header().Set("x-amz-checksum-sha256", info.ChecksumSHA256)
+	}
+	if info.ChecksumMD5 != "" {
+		w.Header().Set("x-amz-checksum-md5", info.ChecksumMD5)
+	}
 	setMetadataHeaders(w, info.Metadata)
 
 	reader, err := readerFunc()

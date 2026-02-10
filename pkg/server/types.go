@@ -86,6 +86,7 @@ type Multipart struct {
 	PartNumber     int    `xml:"PartNumber"`
 	ETag           string `xml:"ETag"`
 	ChecksumSHA256 string `xml:"ChecksumSHA256,omitempty"`
+	ChecksumMD5    string `xml:"ChecksumMD5,omitempty"`
 }
 
 // CompletedPart represents a part in ListParts response
@@ -109,6 +110,7 @@ type CompleteMultipartUploadResult struct {
 	Key            string   `xml:"Key"`
 	ETag           string   `xml:"ETag"`
 	ChecksumSHA256 string   `xml:"ChecksumSHA256,omitempty"`
+	ChecksumMD5    string   `xml:"ChecksumMD5,omitempty"`
 }
 
 // Upload represents an upload in ListMultipartUploads response

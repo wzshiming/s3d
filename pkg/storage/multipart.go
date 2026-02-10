@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/gob"
@@ -111,7 +112,8 @@ func (s *Storage) InitiateMultipartUpload(bucket, key string, userMetadata Metad
 
 // UploadPart uploads a part of a multipart upload
 // If expectedChecksumSHA256 is provided (non-empty), it validates the checksum after computing.
-func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader, expectedChecksumSHA256 string) (*ObjectInfo, error) {
+// If expectedChecksumMD5 is provided (non-empty), it validates the MD5 checksum after computing.
+func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data io.Reader, expectedChecksumSHA256 string, expectedChecksumMD5 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -133,9 +135,10 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while writing
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate SHA256 and MD5 while writing
+	hashSHA256 := sha256.New()
+	hashMD5 := md5.New()
+	writer := io.MultiWriter(tmpFile, hashSHA256, hashMD5)
 
 	_, err = io.Copy(writer, data)
 	if err != nil {
@@ -144,12 +147,18 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 	}
 	tmpFile.Close()
 
-	sum := hash.Sum(nil)
-	etag := hex.EncodeToString(sum)
-	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
+	sumSHA256 := hashSHA256.Sum(nil)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sumSHA256)
 
-	// Validate checksum if provided
+	sumMD5 := hashMD5.Sum(nil)
+	etag := hex.EncodeToString(sumMD5)
+	checksumMD5 := base64.StdEncoding.EncodeToString(sumMD5)
+
+	// Validate checksums if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
+	if expectedChecksumMD5 != "" && expectedChecksumMD5 != checksumMD5 {
 		return nil, ErrChecksumMismatch
 	}
 
@@ -176,6 +185,7 @@ func (s *Storage) UploadPart(bucket, key, uploadID string, partNumber int, data 
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
 		ChecksumSHA256: checksumSHA256,
+		ChecksumMD5:    checksumMD5,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
@@ -228,9 +238,10 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Calculate SHA256 while copying
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Calculate SHA256 and MD5 while copying
+	hashSHA256 := sha256.New()
+	hashMD5 := md5.New()
+	writer := io.MultiWriter(tmpFile, hashSHA256, hashMD5)
 
 	// Copy data from source (either inline or digest)
 	if len(srcMetadata.Data) > 0 {
@@ -265,9 +276,12 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 	}
 	tmpFile.Close()
 
-	sum := hash.Sum(nil)
-	etag := hex.EncodeToString(sum)
-	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
+	sumSHA256 := hashSHA256.Sum(nil)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sumSHA256)
+
+	sumMD5 := hashMD5.Sum(nil)
+	etag := hex.EncodeToString(sumMD5)
+	checksumMD5 := base64.StdEncoding.EncodeToString(sumMD5)
 
 	partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", partNumber, etag))
 
@@ -292,6 +306,7 @@ func (s *Storage) UploadPartCopy(bucket, key, uploadID string, partNumber int, s
 		Size:           partFileInfo.Size(),
 		ETag:           etag,
 		ChecksumSHA256: checksumSHA256,
+		ChecksumMD5:    checksumMD5,
 		ModTime:        partFileInfo.ModTime(),
 		Metadata:       metadata.Metadata,
 	}, nil
@@ -302,7 +317,7 @@ func normalEtag(etag string) string {
 }
 
 // CompleteMultipartUpload completes a multipart upload
-func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Multipart, expectedChecksumSHA256 string) (*ObjectInfo, error) {
+func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []Multipart, expectedChecksumSHA256 string, expectedChecksumMD5 string) (*ObjectInfo, error) {
 	if !s.BucketExists(bucket) {
 		return nil, ErrBucketNotFound
 	}
@@ -320,9 +335,10 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Assemble parts into temp file and calculate SHA256
-	hash := sha256.New()
-	writer := io.MultiWriter(tmpFile, hash)
+	// Assemble parts into temp file and calculate SHA256 and MD5
+	hashSHA256 := sha256.New()
+	hashMD5 := md5.New()
+	writer := io.MultiWriter(tmpFile, hashSHA256, hashMD5)
 
 	for _, part := range parts {
 		partPath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", part.PartNumber, normalEtag(part.ETag)))
@@ -348,12 +364,18 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		return nil, err
 	}
 
-	sum := hash.Sum(nil)
-	etag := hex.EncodeToString(sum)
-	checksumSHA256 := base64.StdEncoding.EncodeToString(sum)
+	sumSHA256 := hashSHA256.Sum(nil)
+	checksumSHA256 := base64.StdEncoding.EncodeToString(sumSHA256)
 
-	// Validate checksum if provided
+	sumMD5 := hashMD5.Sum(nil)
+	etag := hex.EncodeToString(sumMD5)
+	checksumMD5 := base64.StdEncoding.EncodeToString(sumMD5)
+
+	// Validate checksums if provided
 	if expectedChecksumSHA256 != "" && expectedChecksumSHA256 != checksumSHA256 {
+		return nil, ErrChecksumMismatch
+	}
+	if expectedChecksumMD5 != "" && expectedChecksumMD5 != checksumMD5 {
 		return nil, ErrChecksumMismatch
 	}
 
@@ -373,6 +395,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		Size:     fileInfo.Size(),
 		Etag:     etag,
 		Sha256:   checksumSHA256,
+		Md5:      checksumMD5,
 		Metadata: uploadMetadata.Metadata,
 		ModTime:  fileInfo.ModTime(),
 	}
@@ -394,6 +417,7 @@ func (s *Storage) CompleteMultipartUpload(bucket, key, uploadID string, parts []
 		Size:           metadata.Size,
 		ETag:           metadata.Etag,
 		ChecksumSHA256: metadata.Sha256,
+		ChecksumMD5:    metadata.Md5,
 		ModTime:        metadata.ModTime,
 		Metadata:       metadata.Metadata,
 	}, nil
