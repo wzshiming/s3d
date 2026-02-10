@@ -157,3 +157,19 @@ func (s *Storage) BucketExists(bucket string) bool {
 	})
 	return err == nil
 }
+
+// ListBucketNames returns the names of all buckets
+func (s *Storage) ListBucketNames() ([]string, error) {
+	var names []string
+	err := s.db.View(func(tx *bolt.Tx) error {
+		c := tx.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			name := string(k)
+			if strings.HasPrefix(name, contentBucketPrefix) {
+				names = append(names, strings.TrimPrefix(name, contentBucketPrefix))
+			}
+		}
+		return nil
+	})
+	return names, err
+}

@@ -171,6 +171,33 @@ type PostObjectResult struct {
 	ETag     string   `xml:"ETag"`
 }
 
+// BucketLoggingStatus is the response for GetBucketLogging and request body for PutBucketLogging
+type BucketLoggingStatus struct {
+	XMLName        xml.Name        `xml:"BucketLoggingStatus"`
+	LoggingEnabled *LoggingEnabled `xml:"LoggingEnabled,omitempty"`
+}
+
+// LoggingEnabled describes where logs are stored and the prefix for log object keys
+type LoggingEnabled struct {
+	TargetBucket string        `xml:"TargetBucket"`
+	TargetPrefix string        `xml:"TargetPrefix"`
+	TargetGrants []TargetGrant `xml:"TargetGrants>Grant,omitempty"`
+}
+
+// TargetGrant represents a grant for logging permissions
+type TargetGrant struct {
+	Grantee    *LoggingGrantee `xml:"Grantee,omitempty"`
+	Permission string          `xml:"Permission,omitempty"`
+}
+
+// LoggingGrantee represents the person being granted permissions for logging
+type LoggingGrantee struct {
+	Type        string `xml:"http://www.w3.org/2001/XMLSchema-instance type,attr,omitempty"`
+	ID          string `xml:"ID,omitempty"`
+	DisplayName string `xml:"DisplayName,omitempty"`
+	URI         string `xml:"URI,omitempty"`
+}
+
 // Error represents an S3 error response
 type Error struct {
 	XMLName xml.Name `xml:"Error"`

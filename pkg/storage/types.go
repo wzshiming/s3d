@@ -49,3 +49,9 @@ type MultipartUpload struct {
 	Key      string
 	ModTime  time.Time
 }
+
+// BucketLogging represents the logging configuration for a bucket
+type BucketLogging struct {
+	TargetBucket string
+	TargetPrefix string
+}

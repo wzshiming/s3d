@@ -34,6 +34,7 @@ type testServer struct {
 	tmpDir   string
 	listener net.Listener
 	srv      *http.Server
+	handler  *S3Handler
 	client   *s3.Client
 	ctx      context.Context
 }
@@ -96,12 +97,14 @@ func setupTestServer() *testServer {
 		tmpDir:   tmpDir,
 		listener: listener,
 		srv:      srv,
+		handler:  s3Handler,
 		client:   client,
 		ctx:      ctx,
 	}
 }
 
 func (ts *testServer) cleanup() {
+	ts.handler.logFlusher.Stop()
 	ts.srv.Shutdown(ts.ctx)
 	ts.listener.Close()
 	os.RemoveAll(ts.tmpDir)
