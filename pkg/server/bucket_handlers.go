@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/wzshiming/s3d/pkg/storage"
 )
 
 // handleListBuckets handles ListBuckets operation
@@ -49,6 +51,12 @@ func (s *S3Handler) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 func (s *S3Handler) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	err := s.storage.CreateBucket(bucket)
 	if err != nil {
+		// AWS S3 returns 200 OK when the same owner re-creates an existing bucket
+		if err == storage.ErrBucketAlreadyExists {
+			s.setHeaders(w, r)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		s.errorResponse(w, r, err)
 		return
 	}

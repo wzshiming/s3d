@@ -124,6 +124,8 @@ func (s *S3Handler) errorResponse(w http.ResponseWriter, r *http.Request, err er
 		s.response(w, r, "InvalidObjectKey", "The specified key is not valid.", http.StatusBadRequest)
 	case storage.ErrBucketAlreadyExists:
 		s.response(w, r, "BucketAlreadyExists", "Bucket already exists", http.StatusConflict)
+	case storage.ErrBucketNotEmpty:
+		s.response(w, r, "BucketNotEmpty", "The bucket you tried to delete is not empty", http.StatusConflict)
 	default:
 		s.response(w, r, "InternalError", err.Error(), http.StatusInternalServerError)
 	}
