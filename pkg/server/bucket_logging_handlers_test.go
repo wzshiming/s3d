@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"strings"
@@ -246,11 +247,14 @@ func TestBucketLoggingWritesAccessLogs(t *testing.T) {
 		t.Fatalf("Expected at least 1 access log object, got %d", len(listOutput.Contents))
 	}
 
-	// Verify each log object starts with the expected prefix
+	// Verify each log object starts with the expected prefix and ends with .gz
 	for _, obj := range listOutput.Contents {
 		key := aws.ToString(obj.Key)
 		if !strings.HasPrefix(key, "access-logs/") {
 			t.Errorf("Log key %q does not start with expected prefix 'access-logs/'", key)
+		}
+		if !strings.HasSuffix(key, ".gz") {
+			t.Errorf("Log key %q does not end with '.gz' extension", key)
 		}
 	}
 
@@ -264,7 +268,14 @@ func TestBucketLoggingWritesAccessLogs(t *testing.T) {
 	}
 	defer getOutput.Body.Close()
 
-	logContent, err := io.ReadAll(getOutput.Body)
+	// Decompress gzip content
+	gzReader, err := gzip.NewReader(getOutput.Body)
+	if err != nil {
+		t.Fatalf("Failed to create gzip reader: %v", err)
+	}
+	defer gzReader.Close()
+
+	logContent, err := io.ReadAll(gzReader)
 	if err != nil {
 		t.Fatalf("Failed to read log content: %v", err)
 	}

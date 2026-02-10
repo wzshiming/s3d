@@ -90,4 +90,14 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}All e2e tests (including auth and chunked) passed!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
+# Run bucket logging tests
+echo -e "\n${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Running bucket logging e2e tests...${NC}"
+echo -e "${YELLOW}========================================${NC}"
+"${SCRIPT_DIR}/bucket_logging_tests.sh"
+
+echo -e "\n${GREEN}========================================${NC}"
+echo -e "${GREEN}All e2e tests (including auth, chunked, and logging) passed!${NC}"
+echo -e "${GREEN}========================================${NC}"
+
 exit 0

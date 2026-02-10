@@ -1,6 +1,8 @@
 package accesslog
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net/http"
 	"os"
@@ -200,15 +202,25 @@ func (a *AccessLogFlusher) flushBucket(bucket string) error {
 	}
 	a.loggingFilesMut.Unlock()
 
-	file, err = os.Open(newPath)
+	data, err := os.ReadFile(newPath)
 	if err != nil {
 		return err
 	}
 
-	now := time.Now().UTC()
-	logKey := fmt.Sprintf("%s%s-%s", cfg.TargetPrefix, now.Format("2006-01-02-15-04-05"), fmt.Sprintf("%09d", now.UnixNano()%1e9))
+	// Compress log data with gzip
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(data); err != nil {
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		return err
+	}
 
-	_, err = a.storage.PutObject(cfg.TargetBucket, logKey, file, storage.Metadata{ContentType: "text/plain"}, "", "")
+	now := time.Now().UTC()
+	logKey := fmt.Sprintf("%s%s-%s.gz", cfg.TargetPrefix, now.Format("2006-01-02-15-04-05"), fmt.Sprintf("%09d", now.UnixNano()%1e9))
+
+	_, err = a.storage.PutObject(cfg.TargetBucket, logKey, bytes.NewReader(buf.Bytes()), storage.Metadata{ContentType: "application/gzip"}, "", "")
 	if err != nil {
 		return err
 	}
