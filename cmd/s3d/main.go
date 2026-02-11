@@ -63,6 +63,7 @@ func createServer(cfg *Config) (http.Handler, error) {
 
 func main() {
 	addr := flag.String("addr", ":8080", "Server address")
+	cors := flag.Bool("cors", false, "Enable CORS headers for all responses")
 	dataDir := flag.String("data", "./data", "Data directory for storage")
 	credentials := flag.String("credentials", "", "Credentials in format accessKeyID:secretAccessKey (can specify multiple separated by comma)")
 	region := flag.String("region", "us-east-1", "AWS region name")
@@ -89,8 +90,27 @@ func main() {
 		log.Printf("WARNING: Running without authentication (no credentials configured)")
 	}
 
+	if *cors {
+		handler = corsMiddleware(handler)
+	}
+
 	handler = handlers.CombinedLoggingHandler(log.Writer(), handler)
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "*")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
