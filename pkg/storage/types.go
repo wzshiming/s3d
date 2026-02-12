@@ -13,10 +13,15 @@ type ObjectInfo struct {
 	Metadata       Metadata
 }
 
+// Metadata represents object metadata that can be set by the user.
+// It includes standard HTTP headers and custom x-amz-meta- headers.
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html
 type Metadata struct {
 	CacheControl       string
 	ContentDisposition string
 	ContentType        string
+	ContentEncoding    string
+	ContentLanguage    string
 	XAmzMeta           map[string]string
 }
 

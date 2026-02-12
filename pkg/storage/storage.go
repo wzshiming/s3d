@@ -150,6 +150,12 @@ func metadataEqual(a, b Metadata) bool {
 	if a.ContentType != b.ContentType {
 		return false
 	}
+	if a.ContentEncoding != b.ContentEncoding {
+		return false
+	}
+	if a.ContentLanguage != b.ContentLanguage {
+		return false
+	}
 	if len(a.XAmzMeta) != len(b.XAmzMeta) {
 		return false
 	}
