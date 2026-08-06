@@ -507,6 +507,7 @@ func TestXMLTimestampFormat(t *testing.T) {
 	}
 
 	re := regexp.MustCompile(`<CreationDate>([^<]+)</CreationDate>`)
+	formatRe := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	if len(matches) == 0 {
 		t.Fatalf("No CreationDate found in ListBuckets response: %s", string(body))
@@ -515,7 +516,7 @@ func TestXMLTimestampFormat(t *testing.T) {
 		if _, err := time.Parse("2006-01-02T15:04:05.000Z", m[1]); err != nil {
 			t.Errorf("CreationDate %q is not in ISO8601 millisecond format: %v", m[1], err)
 		}
-		if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`).MatchString(m[1]) {
+		if !formatRe.MatchString(m[1]) {
 			t.Errorf("CreationDate %q does not match expected format 2006-01-02T15:04:05.000Z", m[1])
 		}
 	}
