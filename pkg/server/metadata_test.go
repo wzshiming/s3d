@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -336,4 +339,185 @@ func TestMultipartUploadMetadata(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestObjectStandardMetadataHeaders(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-standard-metadata-bucket"
+	objectKey := "standard-metadata-object.txt"
+
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	expires := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:          aws.String(bucketName),
+		Key:             aws.String(objectKey),
+		Body:            strings.NewReader("standard metadata content"),
+		ContentEncoding: aws.String("gzip"),
+		ContentLanguage: aws.String("en-US"),
+		Expires:         aws.Time(expires),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: aws.String(objectKey)})
+
+	t.Run("HeadObjectReturnsStandardHeaders", func(t *testing.T) {
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+
+		if aws.ToString(output.ContentEncoding) != "gzip" {
+			t.Errorf("ContentEncoding = %q, want %q", aws.ToString(output.ContentEncoding), "gzip")
+		}
+		if aws.ToString(output.ContentLanguage) != "en-US" {
+			t.Errorf("ContentLanguage = %q, want %q", aws.ToString(output.ContentLanguage), "en-US")
+		}
+		if output.ExpiresString == nil || *output.ExpiresString == "" {
+			t.Error("Expected Expires header to be present")
+		}
+	})
+
+	t.Run("CopyObjectAppliesStorageClass", func(t *testing.T) {
+		copyKey := "storage-class-copy.txt"
+		_, err := ts.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(copyKey),
+			CopySource:   aws.String(bucketName + "/" + objectKey),
+			StorageClass: types.StorageClassReducedRedundancy,
+		})
+		if err != nil {
+			t.Fatalf("CopyObject failed: %v", err)
+		}
+		defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: aws.String(copyKey)})
+
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(copyKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+		if output.StorageClass != types.StorageClassReducedRedundancy {
+			t.Errorf("StorageClass = %q, want %q", output.StorageClass, types.StorageClassReducedRedundancy)
+		}
+
+		// Original metadata should still be preserved on copy
+		if aws.ToString(output.ContentLanguage) != "en-US" {
+			t.Errorf("ContentLanguage = %q, want %q", aws.ToString(output.ContentLanguage), "en-US")
+		}
+
+		// Listing should report the applied storage class
+		listOutput, err := ts.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: aws.String(bucketName),
+			Prefix: aws.String(copyKey),
+		})
+		if err != nil {
+			t.Fatalf("ListObjectsV2 failed: %v", err)
+		}
+		if len(listOutput.Contents) != 1 {
+			t.Fatalf("Expected 1 object in listing, got %d", len(listOutput.Contents))
+		}
+		if listOutput.Contents[0].StorageClass != types.ObjectStorageClassReducedRedundancy {
+			t.Errorf("Listing StorageClass = %q, want %q", listOutput.Contents[0].StorageClass, types.ObjectStorageClassReducedRedundancy)
+		}
+	})
+
+	t.Run("EmptyMetadataValuePreserved", func(t *testing.T) {
+		emptyMetaKey := "empty-metadata-object.txt"
+		_, err := ts.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:   aws.String(bucketName),
+			Key:      aws.String(emptyMetaKey),
+			Body:     strings.NewReader("content"),
+			Metadata: map[string]string{"meta1": ""},
+		})
+		if err != nil {
+			t.Fatalf("PutObject failed: %v", err)
+		}
+		defer ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: aws.String(emptyMetaKey)})
+
+		output, err := ts.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(emptyMetaKey),
+		})
+		if err != nil {
+			t.Fatalf("HeadObject failed: %v", err)
+		}
+		value, ok := output.Metadata["meta1"]
+		if !ok {
+			t.Fatal("Metadata key 'meta1' with empty value was not preserved")
+		}
+		if value != "" {
+			t.Errorf("Metadata['meta1'] = %q, want empty string", value)
+		}
+	})
+}
+
+func TestStripAWSChunkedEncoding(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"aws-chunked", ""},
+		{"aws-chunked,gzip", "gzip"},
+		{"aws-chunked, gzip", "gzip"},
+		{"gzip", "gzip"},
+		{"gzip,aws-chunked", "gzip"},
+	}
+	for _, tt := range tests {
+		if got := stripAWSChunkedEncoding(tt.input); got != tt.want {
+			t.Errorf("stripAWSChunkedEncoding(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestXMLTimestampFormat(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-xml-timestamp-bucket"
+
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+
+	resp, err := http.Get("http://" + ts.listener.Addr().String() + "/")
+	if err != nil {
+		t.Fatalf("ListBuckets request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read response body: %v", err)
+	}
+
+	re := regexp.MustCompile(`<CreationDate>([^<]+)</CreationDate>`)
+	formatRe := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
+	matches := re.FindAllStringSubmatch(string(body), -1)
+	if len(matches) == 0 {
+		t.Fatalf("No CreationDate found in ListBuckets response: %s", string(body))
+	}
+	for _, m := range matches {
+		if _, err := time.Parse("2006-01-02T15:04:05.000Z", m[1]); err != nil {
+			t.Errorf("CreationDate %q is not in ISO8601 millisecond format: %v", m[1], err)
+		}
+		if !formatRe.MatchString(m[1]) {
+			t.Errorf("CreationDate %q does not match expected format 2006-01-02T15:04:05.000Z", m[1])
+		}
+	}
 }

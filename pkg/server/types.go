@@ -7,8 +7,21 @@ import (
 
 // Bucket represents a bucket in ListBuckets response
 type Bucket struct {
-	Name         string    `xml:"Name"`
-	CreationDate time.Time `xml:"CreationDate"`
+	Name         string  `xml:"Name"`
+	CreationDate ISOTime `xml:"CreationDate"`
+}
+
+// iso8601TimeFormat is the timestamp format used by AWS S3 in XML responses
+// (ISO 8601 in UTC with millisecond precision)
+const iso8601TimeFormat = "2006-01-02T15:04:05.000Z"
+
+// ISOTime wraps time.Time to marshal timestamps in XML responses
+// using the AWS S3 ISO 8601 format with millisecond precision
+type ISOTime time.Time
+
+// MarshalXML implements xml.Marshaler
+func (t ISOTime) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	return e.EncodeElement(time.Time(t).UTC().Format(iso8601TimeFormat), start)
 }
 
 // Owner represents the owner of buckets
@@ -30,12 +43,12 @@ type ListAllMyBucketsResult struct {
 
 // Contents represents an object in ListObjectsV2 response
 type Contents struct {
-	Key          string    `xml:"Key"`
-	LastModified time.Time `xml:"LastModified"`
-	ETag         string    `xml:"ETag"`
-	Size         int64     `xml:"Size"`
-	StorageClass string    `xml:"StorageClass"`
-	Owner        *Owner    `xml:"Owner,omitempty"`
+	Key          string  `xml:"Key"`
+	LastModified ISOTime `xml:"LastModified"`
+	ETag         string  `xml:"ETag"`
+	Size         int64   `xml:"Size"`
+	StorageClass string  `xml:"StorageClass"`
+	Owner        *Owner  `xml:"Owner,omitempty"`
 }
 
 // CommonPrefix represents a common prefix in ListObjectsV2 response
@@ -93,10 +106,10 @@ type Multipart struct {
 
 // CompletedPart represents a part in ListParts response
 type CompletedPart struct {
-	PartNumber   int       `xml:"PartNumber"`
-	LastModified time.Time `xml:"LastModified"`
-	ETag         string    `xml:"ETag"`
-	Size         int64     `xml:"Size"`
+	PartNumber   int     `xml:"PartNumber"`
+	LastModified ISOTime `xml:"LastModified"`
+	ETag         string  `xml:"ETag"`
+	Size         int64   `xml:"Size"`
 }
 
 // CompleteMultipartUpload is the request for CompleteMultipartUpload operation
@@ -117,10 +130,10 @@ type CompleteMultipartUploadResult struct {
 
 // Upload represents an upload in ListMultipartUploads response
 type Upload struct {
-	Key          string    `xml:"Key"`
-	UploadId     string    `xml:"UploadId"`
-	Initiated    time.Time `xml:"Initiated"`
-	StorageClass string    `xml:"StorageClass"`
+	Key          string  `xml:"Key"`
+	UploadId     string  `xml:"UploadId"`
+	Initiated    ISOTime `xml:"Initiated"`
+	StorageClass string  `xml:"StorageClass"`
 }
 
 // ListMultipartUploadsResult is the response for ListMultipartUploads operation
@@ -152,16 +165,16 @@ type ListPartsResult struct {
 
 // CopyObjectResult is the response for CopyObject operation
 type CopyObjectResult struct {
-	XMLName      xml.Name  `xml:"CopyObjectResult"`
-	LastModified time.Time `xml:"LastModified"`
-	ETag         string    `xml:"ETag"`
+	XMLName      xml.Name `xml:"CopyObjectResult"`
+	LastModified ISOTime  `xml:"LastModified"`
+	ETag         string   `xml:"ETag"`
 }
 
 // CopyPartResult is the response for UploadPartCopy operation
 type CopyPartResult struct {
-	XMLName      xml.Name  `xml:"CopyPartResult"`
-	LastModified time.Time `xml:"LastModified"`
-	ETag         string    `xml:"ETag"`
+	XMLName      xml.Name `xml:"CopyPartResult"`
+	LastModified ISOTime  `xml:"LastModified"`
+	ETag         string   `xml:"ETag"`
 }
 
 // PostObjectResult is the response for POST object upload when success_action_status=201
