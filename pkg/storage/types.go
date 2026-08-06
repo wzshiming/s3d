@@ -16,7 +16,11 @@ type ObjectInfo struct {
 type Metadata struct {
 	CacheControl       string
 	ContentDisposition string
+	ContentEncoding    string
+	ContentLanguage    string
 	ContentType        string
+	Expires            string
+	StorageClass       string
 	XAmzMeta           map[string]string
 }
 

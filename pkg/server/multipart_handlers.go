@@ -121,7 +121,7 @@ func (s *S3Handler) handleUploadPartCopy(w http.ResponseWriter, r *http.Request,
 	}
 
 	result := CopyPartResult{
-		LastModified: objInfo.ModTime.UTC(),
+		LastModified: ISOTime(objInfo.ModTime),
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
@@ -246,7 +246,7 @@ func (s *S3Handler) handleListMultipartUploads(w http.ResponseWriter, r *http.Re
 		result.Uploads = append(result.Uploads, Upload{
 			Key:          upload.Key,
 			UploadId:     upload.UploadID,
-			Initiated:    upload.ModTime,
+			Initiated:    ISOTime(upload.ModTime),
 			StorageClass: "STANDARD",
 		})
 	}
@@ -287,7 +287,7 @@ func (s *S3Handler) handleListParts(w http.ResponseWriter, r *http.Request, buck
 	for _, part := range parts {
 		result.Parts = append(result.Parts, CompletedPart{
 			PartNumber:   part.PartNumber,
-			LastModified: part.ModTime,
+			LastModified: ISOTime(part.ModTime),
 			ETag:         fmt.Sprintf("%q", part.ETag),
 			Size:         part.Size,
 		})

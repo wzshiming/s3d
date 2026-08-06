@@ -161,9 +161,21 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	// COPY (default): copy metadata from source object
 	// REPLACE: use metadata from request headers
 	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+	storageClass := r.Header.Get("x-amz-storage-class")
 	var metadata *storage.Metadata
 	if metadataDirective == "REPLACE" {
 		m := extractMetadata(r)
+		metadata = &m
+	} else if storageClass != "" {
+		// Storage class applies to the copy even when metadata is copied
+		// from the source object
+		_, srcInfo, err := s.storage.GetObject(srcBucket, srcKey)
+		if err != nil {
+			s.errorResponse(w, r, err)
+			return
+		}
+		m := srcInfo.Metadata
+		m.StorageClass = storageClass
 		metadata = &m
 	}
 
@@ -175,7 +187,7 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	}
 
 	result := CopyObjectResult{
-		LastModified: objInfo.ModTime.UTC(),
+		LastModified: ISOTime(objInfo.ModTime),
 		ETag:         fmt.Sprintf("%q", objInfo.ETag),
 	}
 
@@ -281,10 +293,10 @@ func (s *S3Handler) handleListObjects(w http.ResponseWriter, r *http.Request, bu
 	for _, obj := range objects {
 		result.Contents = append(result.Contents, Contents{
 			Key:          encodeKey(obj.Key, encodingType),
-			LastModified: obj.ModTime,
+			LastModified: ISOTime(obj.ModTime),
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClassOrDefault(obj.Metadata.StorageClass),
 		})
 	}
 
@@ -358,10 +370,10 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	for _, obj := range objects {
 		content := Contents{
 			Key:          encodeKey(obj.Key, encodingType),
-			LastModified: obj.ModTime,
+			LastModified: ISOTime(obj.ModTime),
 			ETag:         fmt.Sprintf("%q", obj.ETag),
 			Size:         obj.Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClassOrDefault(obj.Metadata.StorageClass),
 		}
 		if fetchOwner {
 			content.Owner = &Owner{
@@ -379,6 +391,14 @@ func (s *S3Handler) handleListObjectsV2(w http.ResponseWriter, r *http.Request, 
 	}
 
 	s.xmlResponse(w, r, result, http.StatusOK)
+}
+
+// storageClassOrDefault returns the storage class or "STANDARD" if unset
+func storageClassOrDefault(storageClass string) string {
+	if storageClass == "" {
+		return "STANDARD"
+	}
+	return storageClass
 }
 
 // encodeKey URL-encodes a value if encodingType is "url"

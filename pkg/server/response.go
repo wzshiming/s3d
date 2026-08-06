@@ -34,11 +34,40 @@ func extractMetadata(r *http.Request) storage.Metadata {
 	if contentDisposition := r.Header.Get("Content-Disposition"); contentDisposition != "" {
 		metadata.ContentDisposition = contentDisposition
 	}
+	if contentEncoding := stripAWSChunkedEncoding(r.Header.Get("Content-Encoding")); contentEncoding != "" {
+		metadata.ContentEncoding = contentEncoding
+	}
+	if contentLanguage := r.Header.Get("Content-Language"); contentLanguage != "" {
+		metadata.ContentLanguage = contentLanguage
+	}
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		metadata.ContentType = contentType
 	}
+	if expires := r.Header.Get("Expires"); expires != "" {
+		metadata.Expires = expires
+	}
+	if storageClass := r.Header.Get("x-amz-storage-class"); storageClass != "" {
+		metadata.StorageClass = storageClass
+	}
 
 	return metadata
+}
+
+// stripAWSChunkedEncoding removes the "aws-chunked" token from a Content-Encoding
+// header value, preserving any other encodings per AWS behavior
+func stripAWSChunkedEncoding(contentEncoding string) string {
+	if contentEncoding == "" {
+		return ""
+	}
+	var encodings []string
+	for _, encoding := range strings.Split(contentEncoding, ",") {
+		encoding = strings.TrimSpace(encoding)
+		if encoding == "" || strings.EqualFold(encoding, "aws-chunked") {
+			continue
+		}
+		encodings = append(encodings, encoding)
+	}
+	return strings.Join(encodings, ",")
 }
 
 // setMetadataHeaders sets user-defined metadata headers on the response
@@ -49,10 +78,22 @@ func setMetadataHeaders(w http.ResponseWriter, metadata storage.Metadata) {
 	if metadata.ContentDisposition != "" {
 		w.Header().Set("Content-Disposition", metadata.ContentDisposition)
 	}
+	if metadata.ContentEncoding != "" {
+		w.Header().Set("Content-Encoding", metadata.ContentEncoding)
+	}
+	if metadata.ContentLanguage != "" {
+		w.Header().Set("Content-Language", metadata.ContentLanguage)
+	}
 	if metadata.ContentType != "" {
 		w.Header().Set("Content-Type", metadata.ContentType)
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if metadata.Expires != "" {
+		w.Header().Set("Expires", metadata.Expires)
+	}
+	if metadata.StorageClass != "" && metadata.StorageClass != "STANDARD" {
+		w.Header().Set("x-amz-storage-class", metadata.StorageClass)
 	}
 
 	for key, value := range metadata.XAmzMeta {
