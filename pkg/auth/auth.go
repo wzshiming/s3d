@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -331,15 +330,48 @@ func (a *AWS4Authenticator) createCanonicalRequestHeader(r *http.Request, signed
 	return a.createCanonicalRequestInternal(r, signedHeaders, false)
 }
 
-func pathEscape(p string) string {
-	item := strings.Split(p, "/")
-	for i, v := range item {
-		if v == "" {
+// awsURIEncode implements the AWS SigV4 URI encoding rules:
+// every byte except unreserved characters (A-Z, a-z, 0-9, '-', '.', '_', '~')
+// is percent-encoded using uppercase hex digits. Space is encoded as "%20"
+// (never "+"). When encodeSlash is false, '/' is left as-is (path encoding).
+func awsURIEncode(s string, encodeSlash bool) string {
+	var buf strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '_' || c == '~':
+			buf.WriteByte(c)
+		case c == '/' && !encodeSlash:
+			buf.WriteByte(c)
+		default:
+			const upperhex = "0123456789ABCDEF"
+			buf.WriteByte('%')
+			buf.WriteByte(upperhex[c>>4])
+			buf.WriteByte(upperhex[c&0xF])
+		}
+	}
+	return buf.String()
+}
+
+// canonicalHeaderValue trims leading/trailing whitespace and collapses
+// sequential spaces in a header value, per the SigV4 "trimall" rule.
+func canonicalHeaderValue(v string) string {
+	var buf strings.Builder
+	inSpace := false
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c == ' ' || c == '\t' {
+			inSpace = true
 			continue
 		}
-		item[i] = url.QueryEscape(v)
+		if inSpace && buf.Len() > 0 {
+			buf.WriteByte(' ')
+		}
+		inSpace = false
+		buf.WriteByte(c)
 	}
-	return strings.Join(item, "/")
+	return buf.String()
 }
 
 // createCanonicalRequestInternal creates a canonical request for AWS Signature V4
@@ -348,44 +380,66 @@ func (a *AWS4Authenticator) createCanonicalRequestInternal(r *http.Request, sign
 	// Method
 	method := r.Method
 
-	// URI
-	uri := pathEscape(r.URL.Path)
+	// URI: for S3, the path is signed exactly as it appears in the request
+	// (already URI-encoded once by the client); it must not be normalized
+	// or double-encoded. EscapedPath returns the raw path as sent.
+	uri := r.URL.EscapedPath()
 	if uri == "" {
 		uri = "/"
 	}
 
 	// Query string
 	queryString := r.URL.Query()
-	var queryParams []string
+	type queryPair struct {
+		key, value string
+	}
+	var queryPairs []queryPair
 	for key := range queryString {
 		// Skip the signature parameter for query string auth
 		if isQueryAuth && key == "X-Amz-Signature" {
 			continue
 		}
+		encodedKey := awsURIEncode(key, true)
 		for _, value := range queryString[key] {
-			// AWS SigV4 requires URL encoding of query parameters
-			encodedKey := url.QueryEscape(key)
-			encodedValue := url.QueryEscape(value)
-			queryParams = append(queryParams, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
+			// AWS SigV4 requires URI encoding with %20 for spaces (not '+'),
+			// and parameters without a value serialized as "key="
+			queryPairs = append(queryPairs, queryPair{encodedKey, awsURIEncode(value, true)})
 		}
 	}
-	sort.Strings(queryParams)
+	// Sort by encoded key name, then by encoded value
+	sort.Slice(queryPairs, func(i, j int) bool {
+		if queryPairs[i].key != queryPairs[j].key {
+			return queryPairs[i].key < queryPairs[j].key
+		}
+		return queryPairs[i].value < queryPairs[j].value
+	})
+	queryParams := make([]string, 0, len(queryPairs))
+	for _, p := range queryPairs {
+		queryParams = append(queryParams, p.key+"="+p.value)
+	}
 	canonicalQueryString := strings.Join(queryParams, "&")
 
-	// Headers
+	// Headers: sorted by lowercase header name (not by the full
+	// "name:value" line, which mis-orders names like "x-key" vs "x-key-md5")
 	headersList := strings.Split(signedHeaders, ";")
+	sort.Strings(headersList)
 	var canonicalHeaders []string
 	for _, header := range headersList {
+		lowerHeader := strings.ToLower(header)
 		var value string
-		if strings.ToLower(header) == "host" {
+		if lowerHeader == "host" {
 			// Host header is special in Go and stored in r.Host
-			value = r.Host
+			value = canonicalHeaderValue(r.Host)
 		} else {
-			value = r.Header.Get(header)
+			values := r.Header.Values(header)
+			trimmed := make([]string, 0, len(values))
+			for _, v := range values {
+				trimmed = append(trimmed, canonicalHeaderValue(v))
+			}
+			value = strings.Join(trimmed, ",")
 		}
-		canonicalHeaders = append(canonicalHeaders, fmt.Sprintf("%s:%s\n", strings.ToLower(header), strings.TrimSpace(value)))
+		canonicalHeaders = append(canonicalHeaders, fmt.Sprintf("%s:%s\n", lowerHeader, value))
 	}
-	sort.Strings(canonicalHeaders)
 	canonicalHeadersString := strings.Join(canonicalHeaders, "")
 
 	// Payload hash
