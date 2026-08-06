@@ -429,7 +429,7 @@ func (a *AWS4Authenticator) createCanonicalRequestInternal(r *http.Request, sign
 		var value string
 		if lowerHeader == "host" {
 			// Host header is special in Go and stored in r.Host
-			value = r.Host
+			value = canonicalHeaderValue(r.Host)
 		} else {
 			values := r.Header.Values(header)
 			trimmed := make([]string, 0, len(values))
