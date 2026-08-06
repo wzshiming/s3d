@@ -58,6 +58,10 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	if key == "" {
+		if sub := findSubresource(query, bucketSubresources); sub != "" {
+			s.handleBucketSubresource(w, r, bucket, sub)
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			s.handleCreateBucket(w, r, bucket)
@@ -83,6 +87,12 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.notAllowedResponse(w, r)
 		}
 	} else {
+		if !query.Has("uploads") && !query.Has("uploadId") {
+			if sub := findSubresource(query, objectSubresources); sub != "" {
+				s.handleObjectSubresource(w, r, bucket, key, sub)
+				return
+			}
+		}
 		switch r.Method {
 		case http.MethodPost:
 			if query.Has("uploads") {

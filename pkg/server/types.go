@@ -180,6 +180,61 @@ type Error struct {
 	Message string   `xml:"Message"`
 }
 
+// VersioningConfiguration is the request/response for bucket versioning operations
+type VersioningConfiguration struct {
+	XMLName xml.Name `xml:"VersioningConfiguration"`
+	Status  string   `xml:"Status,omitempty"`
+}
+
+// Tag represents a single tag in a tag set
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// TagSet represents a set of tags
+type TagSet struct {
+	Tags []Tag `xml:"Tag"`
+}
+
+// Tagging is the request/response for bucket tagging operations
+type Tagging struct {
+	XMLName xml.Name `xml:"Tagging"`
+	TagSet  TagSet   `xml:"TagSet"`
+}
+
+// Grantee represents the grantee of a permission in an ACL
+type Grantee struct {
+	XMLNSXSI    string `xml:"xmlns:xsi,attr,omitempty"`
+	Type        string `xml:"xsi:type,attr,omitempty"`
+	ID          string `xml:"ID,omitempty"`
+	DisplayName string `xml:"DisplayName,omitempty"`
+}
+
+// Grant represents a single grant in an ACL
+type Grant struct {
+	Grantee    Grantee `xml:"Grantee"`
+	Permission string  `xml:"Permission"`
+}
+
+// AccessControlList represents the list of grants in an ACL
+type AccessControlList struct {
+	Grants []Grant `xml:"Grant"`
+}
+
+// AccessControlPolicy is the response for GetBucketAcl operation
+type AccessControlPolicy struct {
+	XMLName           xml.Name          `xml:"AccessControlPolicy"`
+	Owner             Owner             `xml:"Owner"`
+	AccessControlList AccessControlList `xml:"AccessControlList"`
+}
+
+// LocationConstraint is the response for GetBucketLocation operation
+type LocationConstraint struct {
+	XMLName  xml.Name `xml:"LocationConstraint"`
+	Location string   `xml:",chardata"`
+}
+
 // ObjectIdentifier represents an object to delete in DeleteObjects request
 type ObjectIdentifier struct {
 	Key       string `xml:"Key"`
