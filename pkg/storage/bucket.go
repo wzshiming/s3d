@@ -157,3 +157,60 @@ func (s *Storage) BucketExists(bucket string) bool {
 	})
 	return err == nil
 }
+
+// configKeyPrefix is the prefix for bucket configuration keys in the metadata bucket
+const configKeyPrefix = "config::"
+
+// GetBucketConfig retrieves a named configuration blob for a bucket.
+// Returns nil data (and nil error) if the configuration is not set.
+func (s *Storage) GetBucketConfig(bucket, name string) ([]byte, error) {
+	if !isBucketNameValid(bucket) {
+		return nil, ErrInvalidBucketName
+	}
+
+	var data []byte
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(metadataBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		if v := b.Get([]byte(configKeyPrefix + name)); v != nil {
+			data = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// SetBucketConfig stores a named configuration blob for a bucket
+func (s *Storage) SetBucketConfig(bucket, name string, data []byte) error {
+	if !isBucketNameValid(bucket) {
+		return ErrInvalidBucketName
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(metadataBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		return b.Put([]byte(configKeyPrefix+name), data)
+	})
+}
+
+// DeleteBucketConfig removes a named configuration blob for a bucket
+func (s *Storage) DeleteBucketConfig(bucket, name string) error {
+	if !isBucketNameValid(bucket) {
+		return ErrInvalidBucketName
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(metadataBucketPrefix + bucket))
+		if b == nil {
+			return ErrBucketNotFound
+		}
+		return b.Delete([]byte(configKeyPrefix + name))
+	})
+}
