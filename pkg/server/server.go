@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wzshiming/s3d/pkg/auth"
 	"github.com/wzshiming/s3d/pkg/storage"
 )
 
@@ -35,13 +36,35 @@ func NewS3Handler(storage *storage.Storage, opts ...Option) *S3Handler {
 	return h
 }
 
+// healthPaths are unauthenticated health check endpoints (MinIO-compatible)
+var healthPaths = map[string]struct{}{
+	"minio/health/live":  {},
+	"minio/health/ready": {},
+}
+
 // handleRequest handles all S3 requests
 func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	parts := strings.SplitN(path, "/", 2)
 
+	// Health check endpoints do not require authentication
+	if _, ok := healthPaths[path]; ok {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			s.notAllowedResponse(w, r)
+		}
+		return
+	}
+
+	anonymous := auth.IsAnonymous(r.Context())
+
 	// Root path - list buckets
 	if path == "" || path == "/" {
+		if anonymous {
+			s.response(w, r, "AccessDenied", "Access Denied", http.StatusForbidden)
+			return
+		}
 		if r.Method == http.MethodGet {
 			s.handleListBuckets(w, r)
 		} else {
@@ -54,6 +77,13 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var key string
 	if len(parts) > 1 {
 		key = parts[1]
+	}
+
+	// Anonymous requests: without ACL support, only reveal resource
+	// existence. Nonexistent bucket/key returns 404; anything else 403.
+	if anonymous {
+		s.handleAnonymousRequest(w, r, bucket, key)
+		return
 	}
 
 	query := r.URL.Query()
@@ -124,4 +154,26 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.notAllowedResponse(w, r)
 		}
 	}
+}
+
+// handleAnonymousRequest handles requests from anonymous (unsigned) principals.
+// Without ACL support, anonymous access is denied, but nonexistent resources
+// still return 404 (NoSuchBucket/NoSuchKey) as AWS does.
+func (s *S3Handler) handleAnonymousRequest(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	if !s.storage.BucketExists(bucket) {
+		s.errorResponse(w, r, storage.ErrBucketNotFound)
+		return
+	}
+
+	if key != "" {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodDelete:
+			if _, _, err := s.storage.GetObject(bucket, key); err != nil {
+				s.errorResponse(w, r, err)
+				return
+			}
+		}
+	}
+
+	s.response(w, r, "AccessDenied", "Access Denied", http.StatusForbidden)
 }

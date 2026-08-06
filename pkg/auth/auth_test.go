@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -506,5 +507,65 @@ func TestCreateCanonicalRequestQuery(t *testing.T) {
 	// Verify it contains UNSIGNED-PAYLOAD for query auth
 	if !contains(canonical, "UNSIGNED-PAYLOAD") {
 		t.Fatal("Canonical request for query auth should contain UNSIGNED-PAYLOAD")
+	}
+}
+
+func TestIsAnonymousRequest(t *testing.T) {
+	req := httptest.NewRequest("GET", "/bucket/key", nil)
+	if !IsAnonymousRequest(req) {
+		t.Fatal("request without auth info should be anonymous")
+	}
+
+	req = httptest.NewRequest("GET", "/bucket/key", nil)
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=test")
+	if IsAnonymousRequest(req) {
+		t.Fatal("request with Authorization header should not be anonymous")
+	}
+
+	req = httptest.NewRequest("GET", "/bucket/key?X-Amz-Algorithm=AWS4-HMAC-SHA256", nil)
+	if IsAnonymousRequest(req) {
+		t.Fatal("request with X-Amz-Algorithm query should not be anonymous")
+	}
+
+	req = httptest.NewRequest("POST", "/bucket", nil)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	if IsAnonymousRequest(req) {
+		t.Fatal("POST form upload should not be anonymous")
+	}
+}
+
+func TestAuthMiddlewareAnonymousPassThrough(t *testing.T) {
+	auth := NewAWS4Authenticator()
+	auth.AddCredentials("test-access-key", "test-secret-key")
+
+	var gotAnonymous, called bool
+	handler := auth.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		gotAnonymous = IsAnonymous(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Unsigned request should pass through as anonymous
+	req := httptest.NewRequest("GET", "/bucket/key", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if !called {
+		t.Fatal("handler should be called for anonymous request")
+	}
+	if !gotAnonymous {
+		t.Fatal("anonymous request should be marked anonymous in context")
+	}
+
+	// Request with an invalid Authorization header should still be rejected
+	called = false
+	req = httptest.NewRequest("GET", "/bucket/key", nil)
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=bad/20230101/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=bad")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if called {
+		t.Fatal("handler should not be called for invalid signed request")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for invalid signed request, got %d", rec.Code)
 	}
 }

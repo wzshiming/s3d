@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -42,10 +43,56 @@ func (a *AWS4Authenticator) AddCredentials(accessKeyID, secretAccessKey string) 
 	a.credentials[accessKeyID] = secretAccessKey
 }
 
+// accessKeyContextKey is the context key for the authenticated access key ID
+type accessKeyContextKey struct{}
+
+// withAccessKeyID returns a context carrying the access key ID.
+// An empty access key ID marks the request as anonymous.
+func withAccessKeyID(ctx context.Context, accessKeyID string) context.Context {
+	return context.WithValue(ctx, accessKeyContextKey{}, accessKeyID)
+}
+
+// AccessKeyIDFromContext returns the access key ID set by AuthMiddleware and
+// whether the request passed through the middleware at all.
+func AccessKeyIDFromContext(ctx context.Context) (string, bool) {
+	accessKeyID, ok := ctx.Value(accessKeyContextKey{}).(string)
+	return accessKeyID, ok
+}
+
+// IsAnonymous reports whether AuthMiddleware marked the request as anonymous
+// (unsigned request passed through without credentials).
+func IsAnonymous(ctx context.Context) bool {
+	accessKeyID, ok := AccessKeyIDFromContext(ctx)
+	return ok && accessKeyID == ""
+}
+
+// IsAnonymousRequest reports whether the request carries no authentication
+// information: no Authorization header, no X-Amz-Algorithm query parameter,
+// and not a POST form upload.
+func IsAnonymousRequest(r *http.Request) bool {
+	if r.Header.Get("Authorization") != "" {
+		return false
+	}
+	if r.URL.Query().Get("X-Amz-Algorithm") != "" {
+		return false
+	}
+	if isPostFormUpload(r) {
+		return false
+	}
+	return true
+}
+
 // AuthMiddleware is HTTP middleware for authentication
 func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := a.authenticate(r)
+		// Unsigned requests pass through as an anonymous principal;
+		// handlers decide what anonymous access is allowed.
+		if IsAnonymousRequest(r) {
+			next.ServeHTTP(w, r.WithContext(withAccessKeyID(r.Context(), "")))
+			return
+		}
+
+		accessKeyID, err := a.authenticate(r)
 		if err != nil {
 			// Use specific error code if AuthError is returned
 			var authErr *AuthError
@@ -107,7 +154,7 @@ func (a *AWS4Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			r = wrappedReq
 		}
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(withAccessKeyID(r.Context(), accessKeyID)))
 	})
 }
 
