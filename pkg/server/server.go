@@ -94,7 +94,9 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.notAllowedResponse(w, r)
 			}
 		case http.MethodPut:
-			if query.Has("uploadId") {
+			if query.Has("tagging") {
+				s.handlePutObjectTagging(w, r, bucket, key)
+			} else if query.Has("uploadId") {
 				if partNumber := query.Get("partNumber"); partNumber != "" {
 					uploadID := query.Get("uploadId")
 					s.handleUploadPart(w, r, bucket, key, uploadID, partNumber)
@@ -105,7 +107,9 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.handlePutObject(w, r, bucket, key)
 			}
 		case http.MethodGet:
-			if query.Has("uploadId") {
+			if query.Has("tagging") {
+				s.handleGetObjectTagging(w, r, bucket, key)
+			} else if query.Has("uploadId") {
 				uploadID := query.Get("uploadId")
 				s.handleListParts(w, r, bucket, key, uploadID)
 			} else {
@@ -114,7 +118,9 @@ func (s *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodHead:
 			s.handleGetObject(w, r, bucket, key)
 		case http.MethodDelete:
-			if query.Has("uploadId") {
+			if query.Has("tagging") {
+				s.handleDeleteObjectTagging(w, r, bucket, key)
+			} else if query.Has("uploadId") {
 				uploadID := query.Get("uploadId")
 				s.handleAbortMultipartUpload(w, r, bucket, key, uploadID)
 			} else {
