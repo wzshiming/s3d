@@ -62,6 +62,18 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	// Evaluate conditional request headers before any content headers are
+	// written so that 412 and 304 responses are proper S3 responses.
+	if s.checkPreconditions(w, r, info) {
+		return
+	}
+
+	// Validate the Range header against the object size so that
+	// unsatisfiable ranges get a proper S3 InvalidRange error.
+	if s.checkRange(w, r, info) {
+		return
+	}
+
 	s.setHeaders(w, r)
 	w.Header().Set("ETag", fmt.Sprintf("%q", info.ETag))
 	if info.ChecksumSHA256 != "" {
@@ -161,6 +173,14 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 	// COPY (default): copy metadata from source object
 	// REPLACE: use metadata from request headers
 	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+
+	// Copying an object onto itself is only allowed when the metadata is
+	// replaced in the process.
+	if srcBucket == dstBucket && srcKey == dstKey && metadataDirective != "REPLACE" {
+		s.response(w, r, "InvalidRequest", "This copy request is illegal because it is trying to copy an object to itself without changing the object's metadata, storage class, website redirect location or encryption attributes.", http.StatusBadRequest)
+		return
+	}
+
 	var metadata *storage.Metadata
 	if metadataDirective == "REPLACE" {
 		m := extractMetadata(r)

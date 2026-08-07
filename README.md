@@ -18,7 +18,8 @@ An S3-compatible server with local storage
 - bucket versioning
 - object locking
 - bucket policies
-- ACLs
+- ACLs (s3d is single-tenant: every configured credential has full access to
+  all buckets, so cross-account ownership behaviors do not apply)
 - server-side encryption
 - object tagging
 - lifecycle policies
