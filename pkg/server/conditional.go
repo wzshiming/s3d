@@ -175,7 +175,8 @@ func parseRangeHeader(rangeHeader string, size int64) (valid, satisfiable bool) 
 		if start == "" {
 			// A suffix-byte-range-spec ("-N") requests the last N
 			// bytes and is only satisfiable when N is not zero and
-			// the object is not empty.
+			// the object is not empty. The n < 0 guard rejects
+			// specs like "--5" where end itself is negative.
 			n, err := strconv.ParseInt(end, 10, 64)
 			if err != nil || n < 0 {
 				return false, false
