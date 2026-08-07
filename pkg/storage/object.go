@@ -387,7 +387,7 @@ func (s *Storage) ListObjects(bucket, prefix, delimiter, marker string, maxKeys 
 }
 
 // CopyObject copies an object from one location to another
-func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replaceMetadata *Metadata) (*ObjectInfo, error) {
+func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replaceMetadata *Metadata, replaceTagging *[]Tag) (*ObjectInfo, error) {
 	// Verify source bucket exists
 	if !s.BucketExists(srcBucket) {
 		return nil, ErrBucketNotFound
@@ -412,6 +412,15 @@ func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string, replac
 		metadataToUse = *replaceMetadata
 	} else {
 		metadataToUse = srcMetadata.Metadata
+	}
+
+	// Determine which tag set to use
+	// nil (COPY): copy tags from the source object
+	// non-nil (REPLACE): use the provided tag set
+	if replaceTagging != nil {
+		metadataToUse.Tagging = *replaceTagging
+	} else {
+		metadataToUse.Tagging = srcMetadata.Metadata.Tagging
 	}
 
 	if existingDstMetadata != nil && existingDstMetadata.Etag == srcMetadata.Etag && metadataEqual(existingDstMetadata.Metadata, metadataToUse) {

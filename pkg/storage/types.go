@@ -18,6 +18,13 @@ type Metadata struct {
 	ContentDisposition string
 	ContentType        string
 	XAmzMeta           map[string]string
+	Tagging            []Tag
+}
+
+// Tag represents a single object tag
+type Tag struct {
+	Key   string
+	Value string
 }
 
 // BucketInfo contains metadata about a bucket

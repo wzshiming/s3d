@@ -214,3 +214,20 @@ type DeleteObjectsResult struct {
 	Deleted []DeletedObject `xml:"Deleted,omitempty"`
 	Errors  []DeleteError   `xml:"Error,omitempty"`
 }
+
+// Tag represents a single tag of a tag set
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// TagSet represents a set of tags
+type TagSet struct {
+	Tags []Tag `xml:"Tag"`
+}
+
+// Tagging is the request/response body for Put/GetObjectTagging operations
+type Tagging struct {
+	XMLName xml.Name `xml:"Tagging"`
+	TagSet  TagSet   `xml:"TagSet"`
+}

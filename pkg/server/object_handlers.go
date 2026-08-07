@@ -37,6 +37,12 @@ func (s *S3Handler) handlePutObject(w http.ResponseWriter, r *http.Request, buck
 
 	metadata := extractMetadata(r)
 
+	tags, ok := s.extractTagging(w, r)
+	if !ok {
+		return
+	}
+	metadata.Tagging = tags
+
 	objInfo, err := s.storage.PutObject(bucket, key, r.Body, metadata, expectedChecksumSHA256, expectedChecksumMD5)
 	if err != nil {
 		s.errorResponse(w, r, err)
@@ -71,6 +77,9 @@ func (s *S3Handler) handleGetObject(w http.ResponseWriter, r *http.Request, buck
 		w.Header().Set("x-amz-checksum-md5", info.ChecksumMD5)
 	}
 	setMetadataHeaders(w, info.Metadata)
+	if len(info.Metadata.Tagging) > 0 {
+		w.Header().Set("x-amz-tagging-count", strconv.Itoa(len(info.Metadata.Tagging)))
+	}
 
 	reader, err := readerFunc()
 	if err != nil {
@@ -167,8 +176,20 @@ func (s *S3Handler) handleCopyObject(w http.ResponseWriter, r *http.Request, dst
 		metadata = &m
 	}
 
+	// Handle x-amz-tagging-directive header
+	// COPY (default): copy tags from source object
+	// REPLACE: use tags from the x-amz-tagging request header
+	var tagging *[]storage.Tag
+	if r.Header.Get("x-amz-tagging-directive") == "REPLACE" {
+		tags, ok := s.extractTagging(w, r)
+		if !ok {
+			return
+		}
+		tagging = &tags
+	}
+
 	// Perform copy
-	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey, metadata)
+	objInfo, err := s.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey, metadata, tagging)
 	if err != nil {
 		s.errorResponse(w, r, err)
 		return

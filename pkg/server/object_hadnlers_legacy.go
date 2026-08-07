@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"strings"
@@ -75,6 +76,22 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 			}
 			metadata.XAmzMeta[metaKey] = vs[0]
 		}
+	}
+
+	// Parse tagging form field (a Tagging XML document)
+	if taggingValue := r.FormValue("tagging"); taggingValue != "" {
+		var tagging Tagging
+		if err := xml.Unmarshal([]byte(taggingValue), &tagging); err != nil {
+			s.response(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+			return
+		}
+		tags := tagsFromXML(tagging)
+		if err := validateTags(tags); err != nil {
+			s.response(w, r, "InvalidTag", err.Error(), http.StatusBadRequest)
+			return
+		}
+		sortTags(tags)
+		metadata.Tagging = tags
 	}
 
 	objInfo, err := s.storage.PutObject(bucket, key, file, metadata, "", "")
