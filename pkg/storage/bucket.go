@@ -83,7 +83,23 @@ func (s *Storage) DeleteBucket(bucket string) error {
 		if b == nil {
 			return ErrBucketNotFound
 		}
-		// TODO: Clean up all objects and multipart uploads in the bucket before deleting
+
+		// Check if the bucket has any objects
+		c := b.Cursor()
+		k, _ := c.First()
+		if k != nil {
+			return ErrBucketNotEmpty
+		}
+
+		// Check if the bucket has any in-progress multipart uploads
+		ub := tx.Bucket([]byte(uploadsBucketPrefix + bucket))
+		if ub != nil {
+			uc := ub.Cursor()
+			uk, _ := uc.First()
+			if uk != nil {
+				return ErrBucketNotEmpty
+			}
+		}
 
 		err := tx.DeleteBucket([]byte(contentBucketPrefix + bucket))
 		if err != nil {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -23,13 +24,13 @@ func TestBucketOperations(t *testing.T) {
 		}
 	})
 
-	// Test CreateBucket - Duplicate (should fail)
+	// Test CreateBucket - Duplicate (should succeed, AWS S3 returns 200 OK for idempotent creation)
 	t.Run("CreateBucket_Duplicate", func(t *testing.T) {
 		_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
 			Bucket: aws.String(bucketName),
 		})
-		if err == nil {
-			t.Fatal("Expected error when creating duplicate bucket, got nil")
+		if err != nil {
+			t.Fatalf("Expected success when creating duplicate bucket (idempotent), got: %v", err)
 		}
 	})
 
@@ -297,4 +298,50 @@ func TestListBucketsPrefix(t *testing.T) {
 			t.Fatal("Expected bucket bbb-test-bucket not found")
 		}
 	})
+}
+
+func TestDeleteBucketNotEmpty(t *testing.T) {
+	ctx := context.Background()
+	bucketName := "test-delete-nonempty-bucket"
+
+	// Create bucket
+	_, err := ts.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+	defer func() {
+		// Clean up: delete the object first, then the bucket
+		ts.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("test-key"),
+		})
+		ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	}()
+
+	// Put an object in the bucket
+	_, err = ts.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("test-key"),
+		Body:   strings.NewReader("test-content"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	// Try to delete the non-empty bucket (should fail with BucketNotEmpty)
+	_, err = ts.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err == nil {
+		t.Fatal("Expected error when deleting non-empty bucket, got nil")
+	}
+
+	// Verify the error is BucketNotEmpty
+	if !strings.Contains(err.Error(), "BucketNotEmpty") {
+		t.Fatalf("Expected BucketNotEmpty error, got: %v", err)
+	}
 }

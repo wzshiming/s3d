@@ -33,13 +33,13 @@ func TestBucketOperations(t *testing.T) {
 		}
 	})
 
-	// Test: Create bucket - Duplicate (should fail)
+	// Test: Create bucket - Duplicate (should succeed, AWS S3 returns 200 OK for idempotent creation)
 	t.Run("CreateBucket_Duplicate", func(t *testing.T) {
 		_, err := ts.client.CreateBucket(ts.ctx, &s3.CreateBucketInput{
 			Bucket: aws.String(bucketName),
 		})
-		if err == nil {
-			t.Fatal("Expected error when creating duplicate bucket, got nil")
+		if err != nil {
+			t.Fatalf("Expected success when creating duplicate bucket (idempotent), got: %v", err)
 		}
 	})
 

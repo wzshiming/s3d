@@ -32,6 +32,7 @@ var (
 var (
 	ErrBucketNotFound      = errors.New("bucket not found")
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
+	ErrBucketNotEmpty      = errors.New("bucket not empty")
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrInvalidUploadID     = errors.New("invalid upload id")
 	ErrInvalidPartNumber   = errors.New("invalid part number")
