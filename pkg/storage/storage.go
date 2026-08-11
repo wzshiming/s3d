@@ -15,6 +15,7 @@ const (
 	uploadsDir = ".uploads"
 	tempDir    = ".temp"
 	objectsDir = ".objects"
+	logDir     = ".log"
 	// inlineThreshold is the maximum size (in bytes) for files to be stored inline in metadata
 	// Files smaller than or equal to this size will be embedded in the meta file
 	inlineThreshold = 1024
@@ -30,17 +31,18 @@ var (
 )
 
 var (
-	ErrBucketNotFound      = errors.New("bucket not found")
-	ErrBucketAlreadyExists = errors.New("bucket already exists")
-	ErrObjectNotFound      = errors.New("object not found")
-	ErrInvalidUploadID     = errors.New("invalid upload id")
-	ErrInvalidPartNumber   = errors.New("invalid part number")
-	ErrInvalidBucketName   = errors.New("invalid bucket name")
-	ErrInvalidObjectKey    = errors.New("invalid object key")
-	ErrChecksumMismatch    = errors.New("checksum mismatch")
-	ErrInvalidRange        = errors.New("invalid byte range")
-	ErrInvalidPart         = errors.New("invalid part")
-	ErrUploadNotFound      = errors.New("upload not found")
+	ErrBucketLoggingNotFound = errors.New("bucket logging configuration not found")
+	ErrBucketNotFound        = errors.New("bucket not found")
+	ErrBucketAlreadyExists   = errors.New("bucket already exists")
+	ErrObjectNotFound        = errors.New("object not found")
+	ErrInvalidUploadID       = errors.New("invalid upload id")
+	ErrInvalidPartNumber     = errors.New("invalid part number")
+	ErrInvalidBucketName     = errors.New("invalid bucket name")
+	ErrInvalidObjectKey      = errors.New("invalid object key")
+	ErrChecksumMismatch      = errors.New("checksum mismatch")
+	ErrInvalidRange          = errors.New("invalid byte range")
+	ErrInvalidPart           = errors.New("invalid part")
+	ErrUploadNotFound        = errors.New("upload not found")
 )
 
 // Storage is the local filesystem storage backend
@@ -49,6 +51,7 @@ type Storage struct {
 	tempDir    string
 	objectsDir string
 	uploadsDir string
+	logDir     string
 	db         *bolt.DB
 }
 
@@ -74,6 +77,11 @@ func NewStorage(basePath string) (*Storage, error) {
 		return nil, err
 	}
 
+	logDir := filepath.Join(absPath, logDir)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
+	}
+
 	// Open BoltDB for reference counting
 	dbPath := filepath.Join(absPath, "s3d.db")
 	db, err := bolt.Open(dbPath, 0600, nil)
@@ -96,6 +104,7 @@ func NewStorage(basePath string) (*Storage, error) {
 		tempDir:    tempDir,
 		objectsDir: objectsDir,
 		uploadsDir: uploadsDir,
+		logDir:     logDir,
 		db:         db,
 	}
 
@@ -108,6 +117,11 @@ func (s *Storage) Close() error {
 		return s.db.Close()
 	}
 	return nil
+}
+
+// LogDir returns the path to the log directory
+func (s *Storage) LogDir() string {
+	return s.logDir
 }
 
 func (s *Storage) tempFile() (*os.File, error) {

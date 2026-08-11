@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/wzshiming/s3d/pkg/auth"
@@ -14,10 +15,11 @@ import (
 
 // Config holds the server configuration
 type Config struct {
-	Addr        string
-	DataDir     string
-	Credentials string
-	Region      string
+	Addr             string
+	DataDir          string
+	Credentials      string
+	Region           string
+	LogFlushInterval time.Duration
 }
 
 // parseCredentials parses comma-separated credentials and adds them to the authenticator
@@ -44,7 +46,7 @@ func createServer(cfg *Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := server.NewS3Handler(store, server.WithRegion(cfg.Region))
+	s := server.NewS3Handler(store, server.WithRegion(cfg.Region), server.WithLogFlushInterval(cfg.LogFlushInterval))
 	if cfg.Credentials == "" {
 		return s, nil
 	}
@@ -67,13 +69,15 @@ func main() {
 	dataDir := flag.String("data", "./data", "Data directory for storage")
 	credentials := flag.String("credentials", "", "Credentials in format accessKeyID:secretAccessKey (can specify multiple separated by comma)")
 	region := flag.String("region", "us-east-1", "AWS region name")
+	logFlushInterval := flag.Duration("log-flush-interval", 1*time.Minute, "Interval for flushing access logs")
 	flag.Parse()
 
 	cfg := &Config{
-		Addr:        *addr,
-		DataDir:     *dataDir,
-		Credentials: *credentials,
-		Region:      *region,
+		Addr:             *addr,
+		DataDir:          *dataDir,
+		Credentials:      *credentials,
+		Region:           *region,
+		LogFlushInterval: *logFlushInterval,
 	}
 
 	handler, err := createServer(cfg)
