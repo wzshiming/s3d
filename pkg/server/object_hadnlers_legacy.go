@@ -66,6 +66,12 @@ func (s *S3Handler) handlePostObject(w http.ResponseWriter, r *http.Request, buc
 	if cc := r.FormValue("Cache-Control"); cc != "" {
 		metadata.CacheControl = cc
 	}
+	if ce := r.FormValue("Content-Encoding"); ce != "" {
+		metadata.ContentEncoding = ce
+	}
+	if cl := r.FormValue("Content-Language"); cl != "" {
+		metadata.ContentLanguage = cl
+	}
 	for k, vs := range r.MultipartForm.Value {
 		lower := strings.ToLower(k)
 		if strings.HasPrefix(lower, "x-amz-meta-") && len(vs) > 0 {

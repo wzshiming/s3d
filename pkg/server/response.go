@@ -37,6 +37,12 @@ func extractMetadata(r *http.Request) storage.Metadata {
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		metadata.ContentType = contentType
 	}
+	if contentEncoding := r.Header.Get("Content-Encoding"); contentEncoding != "" {
+		metadata.ContentEncoding = contentEncoding
+	}
+	if contentLanguage := r.Header.Get("Content-Language"); contentLanguage != "" {
+		metadata.ContentLanguage = contentLanguage
+	}
 
 	return metadata
 }
@@ -53,6 +59,12 @@ func setMetadataHeaders(w http.ResponseWriter, metadata storage.Metadata) {
 		w.Header().Set("Content-Type", metadata.ContentType)
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if metadata.ContentEncoding != "" {
+		w.Header().Set("Content-Encoding", metadata.ContentEncoding)
+	}
+	if metadata.ContentLanguage != "" {
+		w.Header().Set("Content-Language", metadata.ContentLanguage)
 	}
 
 	for key, value := range metadata.XAmzMeta {
