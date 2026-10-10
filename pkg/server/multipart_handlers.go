@@ -20,6 +20,12 @@ func (s *S3Handler) handleInitiateMultipartUpload(w http.ResponseWriter, r *http
 
 	metadata := extractMetadata(r)
 
+	tags, ok := s.extractTagging(w, r)
+	if !ok {
+		return
+	}
+	metadata.Tagging = tags
+
 	uploadID, err := s.storage.InitiateMultipartUpload(bucket, key, metadata)
 	if err != nil {
 		s.errorResponse(w, r, err)

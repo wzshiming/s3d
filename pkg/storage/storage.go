@@ -158,6 +158,14 @@ func metadataEqual(a, b Metadata) bool {
 			return false
 		}
 	}
+	if len(a.Tagging) != len(b.Tagging) {
+		return false
+	}
+	for i, tag := range a.Tagging {
+		if b.Tagging[i] != tag {
+			return false
+		}
+	}
 	return true
 }
 
